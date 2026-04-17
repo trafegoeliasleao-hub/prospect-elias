@@ -547,7 +547,7 @@ textarea.fc2{resize:none}
 <div class="overlay" id="overlay" onclick="overlayClick(event)">
   <div class="modal">
     <div class="m-drag"></div>
-    <div class="mt">Novo Lead</div>
+    <div class="mt" id="modalTitle">Novo Lead</div>
     <div class="fr">
       <div class="fg"><label class="fl">Nome / Empresa</label><input class="fc2" id="f-name" placeholder="Ex: Moto Parauapebas"></div>
       <div class="fg"><label class="fl">Nicho</label>
@@ -741,6 +741,7 @@ function renderDetail() {
         <button class="del-btn" onclick="delLead()" title="Excluir">
           <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M2 3.5h10M5 3.5V2.5a.5.5 0 0 1 .5-.5h3a.5.5 0 0 1 .5.5v1M11.5 3.5l-.8 8a.5.5 0 0 1-.5.5H3.8a.5.5 0 0 1-.5-.5l-.8-8" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
         </button>
+        <button class="btn btn-g" style="font-size:12px;padding:6px 14px" onclick="openModal('${l.id}')">✏️ Editar</button>
       </div>
     </div>
 
@@ -760,6 +761,18 @@ function renderDetail() {
         </div>
       </div>
       ${l.obs ? `<div class="obs-b">${esc(l.obs)}</div>` : ''}
+    </div>
+
+    <div class="card">
+      <div class="ch">
+        <div class="ct"><span class="ct-i">📣</span> Meta Ads Library</div>
+        ${l.instagram ? `<button class="btn btn-g" style="font-size:12px;padding:6px 14px" onclick="checkAdsLibrary('${l.instagram.replace('@','')}')">🔍 Verificar Anúncios</button>` : '<span style="font-size:12px;color:var(--text-3)">Adicione o Instagram para verificar</span>'}
+      </div>
+      <div id="adsResult" style="padding:0 20px">
+        <div style="padding:14px 0;font-size:13px;color:var(--text-3);font-style:italic">
+          ${l.instagram ? 'Clique em Verificar para checar se este perfil está rodando anúncios no Facebook/Instagram.' : ''}
+        </div>
+      </div>
     </div>
 
     <div class="card">
@@ -928,30 +941,99 @@ function copyScript() {
 }
 
 // ── MODAL ─────────────────────────────────
-function openModal() { document.getElementById('overlay').classList.add('open'); setTimeout(()=>document.getElementById('f-name').focus(),100); }
-function closeModal() { document.getElementById('overlay').classList.remove('open'); }
+let editingId = null;
+
+function openModal(id = null) {
+  editingId = id;
+  const l = id ? getLead(id) : null;
+  document.getElementById('modalTitle').textContent = l ? 'Editar Lead' : 'Novo Lead';
+
+  if (l) {
+    document.getElementById('f-name').value = l.name || '';
+    document.getElementById('f-niche').value = l.niche || '';
+    document.getElementById('f-wa').value = l.whatsapp || '';
+    document.getElementById('f-ig').value = l.instagram || '';
+    document.getElementById('f-ch').value = l.channel || 'WhatsApp';
+    document.getElementById('f-or').value = l.origin || 'Instagram';
+    document.getElementById('f-ob').value = l.obs || '';
+  } else {
+    ['f-name','f-wa','f-ig','f-ob'].forEach(id => document.getElementById(id).value = '');
+  }
+
+  document.getElementById('overlay').classList.add('open');
+  setTimeout(() => document.getElementById('f-name').focus(), 100);
+}
+
+function closeModal() { document.getElementById('overlay').classList.remove('open'); editingId = null; }
 function overlayClick(e) { if (e.target===document.getElementById('overlay')) closeModal(); }
 
 async function saveLead() {
   const name = document.getElementById('f-name').value.trim();
   if (!name) { document.getElementById('f-name').focus(); return; }
-  const l = {
-    id: crypto.randomUUID(), name,
-    niche: document.getElementById('f-niche').value,
-    whatsapp: document.getElementById('f-wa').value.trim(),
-    instagram: document.getElementById('f-ig').value.trim(),
-    channel: document.getElementById('f-ch').value,
-    origin: document.getElementById('f-or').value,
-    obs: document.getElementById('f-ob').value.trim(),
-    status: 'novo', contacts: [], notes: '', script: '', followup: null,
-    createdAt: new Date().toISOString()
-  };
-  leads.unshift(l);
-  await persistLead(l);
-  closeModal();
-  ['f-name','f-wa','f-ig','f-ob'].forEach(id => document.getElementById(id).value = '');
-  renderAll(); selectLead(l.id);
-  toast('✓ Lead adicionado');
+
+  if (editingId) {
+    // EDITAR lead existente
+    const l = getLead(editingId);
+    if (!l) return;
+    l.name = name;
+    l.niche = document.getElementById('f-niche').value;
+    l.whatsapp = document.getElementById('f-wa').value.trim();
+    l.instagram = document.getElementById('f-ig').value.trim();
+    l.channel = document.getElementById('f-ch').value;
+    l.origin = document.getElementById('f-or').value;
+    l.obs = document.getElementById('f-ob').value.trim();
+    await persistLead(l);
+    closeModal();
+    renderAll(); renderDetail();
+    toast('✓ Lead atualizado');
+  } else {
+    // NOVO lead
+    const l = {
+      id: crypto.randomUUID(), name,
+      niche: document.getElementById('f-niche').value,
+      whatsapp: document.getElementById('f-wa').value.trim(),
+      instagram: document.getElementById('f-ig').value.trim(),
+      channel: document.getElementById('f-ch').value,
+      origin: document.getElementById('f-or').value,
+      obs: document.getElementById('f-ob').value.trim(),
+      status: 'novo', contacts: [], notes: '', script: '', followup: null,
+      createdAt: new Date().toISOString()
+    };
+    leads.unshift(l);
+    await persistLead(l);
+    closeModal();
+    renderAll(); selectLead(l.id);
+    toast('✓ Lead adicionado');
+  }
+}
+
+// ── ADS LIBRARY ───────────────────────────
+function checkAdsLibrary(instagram) {
+  const handle = instagram.replace('@','').trim();
+  const el = document.getElementById('adsResult');
+  if (!el) return;
+
+  // Link direto para a Meta Ads Library filtrando pelo nome
+  const adsUrl = `https://www.facebook.com/ads/library/?active_status=active&ad_type=all&country=BR&q=${encodeURIComponent(handle)}&search_type=keyword_unordered`;
+  const pageUrl = `https://www.facebook.com/${handle}`;
+
+  el.innerHTML = `
+    <div style="padding:14px 0;display:flex;flex-direction:column;gap:10px">
+      <div style="font-size:13px;color:var(--text-2);line-height:1.6">
+        Acesse os links abaixo para verificar se <strong>@${esc(handle)}</strong> está rodando anúncios ativos no Meta:
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <a href="${adsUrl}" target="_blank" class="btn btn-p" style="font-size:12px;padding:7px 16px;text-decoration:none">
+          📣 Ver na Ads Library
+        </a>
+        <a href="${pageUrl}" target="_blank" class="btn btn-g" style="font-size:12px;padding:7px 16px;text-decoration:none">
+          👤 Ver Página/Perfil
+        </a>
+      </div>
+      <div style="background:var(--bg);border-radius:var(--r);padding:12px 14px;font-size:12px;color:var(--text-2);line-height:1.6">
+        💡 <strong>O que procurar:</strong> Se aparecer anúncios ativos, o lead já investe em tráfego — aborde oferecendo melhoria de resultados. Se não aparecer, é a abertura perfeita para apresentar tráfego pago como oportunidade.
+      </div>
+    </div>`;
 }
 
 // ── BUSCA DE LEADS ────────────────────────

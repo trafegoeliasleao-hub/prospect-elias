@@ -1339,14 +1339,9 @@ async function consultarCNPJ() {
     const r = await fetch(`https://brasilapi.com.br/api/cnpj/v1/${raw}`);
     if (!r.ok) throw new Error('não encontrado');
     const d = await r.json();
-    l.cnpj = raw;
-    l.cnpjData = d;
-    // preencher nome se vazio
-    if (!l.name || l.name.length < 3) { l.name = d.nome_fantasia || d.razao_social; }
-    await persistLead(l);
-    document.getElementById('cnpjDataArea').innerHTML = renderCNPJData(d);
-    renderLeads();
-    toast('✓ CNPJ consultado e dados preenchidos!');
+    // apenas exibe, não salva ainda
+    document.getElementById('cnpjDataArea').innerHTML = renderCNPJData(d, raw);
+    toast('✓ Dados encontrados! Confirme para salvar no card.');
   } catch(e) {
     document.getElementById('cnpjDataArea').innerHTML = `<div class="cnpj-empty">CNPJ não encontrado na base da Receita Federal.</div>`;
     toast('CNPJ não encontrado');
@@ -1354,7 +1349,18 @@ async function consultarCNPJ() {
   document.getElementById('cnpjLoading')?.classList.remove('show');
 }
 
-function renderCNPJData(d) {
+async function confirmarCNPJ(raw, dataStr) {
+  const l = getLead(curId); if (!l) return;
+  const d = JSON.parse(decodeURIComponent(dataStr));
+  l.cnpj = raw;
+  l.cnpjData = d;
+  if (!l.name || l.name.length < 3) l.name = d.nome_fantasia || d.razao_social;
+  await persistLead(l);
+  renderLeads(); renderDetail();
+  toast('✅ Dados do CNPJ salvos no card!');
+}
+
+function renderCNPJData(d, raw) {
   if (!d) return '<div class="cnpj-empty">Consulte o CNPJ para ver os dados da empresa.</div>';
   const socios = (d.qsa||[]).map(s=>s.nome_socio).join(', ') || '—';
   const cnae = d.cnae_fiscal_descricao || '—';
@@ -1368,7 +1374,14 @@ function renderCNPJData(d) {
     ['Sócios', socios],
     ['Abertura', d.data_inicio_atividade ? new Date(d.data_inicio_atividade).toLocaleDateString('pt-BR') : '—'],
   ];
-  return `<div class="cnpj-data">${fields.map(([l,v])=>`<div class="cnpj-field"><span class="cnpj-label">${l}</span><span class="cnpj-value">${esc(String(v))}</span></div>`).join('')}</div>`;
+  const encoded = encodeURIComponent(JSON.stringify(d));
+  const confirmBtn = raw ? `
+    <div style="padding:12px 0 0">
+      <button class="btn btn-p" style="width:100%;justify-content:center;font-size:13px" onclick="confirmarCNPJ('${raw}','${encoded}')">
+        ✅ Confirmar e salvar esses dados no card
+      </button>
+    </div>` : '';
+  return `<div class="cnpj-data">${fields.map(([l,v])=>`<div class="cnpj-field"><span class="cnpj-label">${l}</span><span class="cnpj-value">${esc(String(v))}</span></div>`).join('')}${confirmBtn}</div>`;
 }
 
 // ── AVALIAÇÃO DE PERFIL ────────────────────

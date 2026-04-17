@@ -323,6 +323,60 @@ textarea.fc2{resize:none}
 .busca-empty{text-align:center;padding:48px 0;color:var(--text-3);font-size:13px}
 .full-col{grid-column:1/-1}
 
+/* SIDEBAR — HOJE */
+.sb-hoje{border-top:1px solid var(--border);padding:8px;flex-shrink:0}
+.sb-hoje-title{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text-3);padding:4px 10px 6px}
+.hoje-item{display:flex;align-items:center;gap:8px;padding:7px 10px;border-radius:var(--r-s);cursor:pointer;transition:var(--t)}
+.hoje-item:hover{background:rgba(0,0,0,.04)}
+.hoje-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0}
+.hoje-body{flex:1;min-width:0}
+.hoje-name{font-size:12px;font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.hoje-when{font-size:10px;font-weight:600}
+.hoje-overdue{color:var(--red)}
+.hoje-today{color:var(--orange)}
+.hoje-soon{color:var(--accent)}
+
+/* ADS LIBRARY — REGISTRO MANUAL */
+.ads-result-area{padding:14px 20px;display:flex;flex-direction:column;gap:12px}
+.ads-status-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.ads-toggle{display:flex;background:var(--bg);border-radius:980px;padding:2px;gap:2px}
+.ads-opt{padding:5px 14px;border-radius:980px;font-size:12px;font-weight:600;cursor:pointer;border:none;font-family:inherit;background:transparent;color:var(--text-2);transition:var(--t)}
+.ads-opt.active-yes{background:var(--green);color:#fff}
+.ads-opt.active-no{background:var(--red);color:#fff}
+.ads-count-row{display:flex;align-items:center;gap:8px}
+.ads-count-in{width:80px;background:var(--bg);border:1.5px solid transparent;border-radius:var(--r-s);padding:7px 10px;font-family:inherit;font-size:13px;font-weight:600;color:var(--text);outline:none;text-align:center;transition:var(--t)}
+.ads-count-in:focus{border-color:var(--accent);background:var(--white)}
+.ads-saved{font-size:11px;color:var(--green);font-weight:600;opacity:0;transition:opacity .3s;margin-left:4px}
+.ads-saved.show{opacity:1}
+.ads-info-box{background:var(--bg);border-radius:var(--r);padding:10px 14px;font-size:12px;color:var(--text-2);line-height:1.6}
+
+/* PLANILHA PAGE */
+.plan-page{position:fixed;inset:0;background:var(--bg);z-index:500;display:none;flex-direction:column}
+.plan-page.open{display:flex}
+.plan-topbar{background:rgba(255,255,255,.9);backdrop-filter:blur(12px);border-bottom:1px solid var(--border);padding:0 24px;height:52px;display:flex;align-items:center;gap:16px;flex-shrink:0}
+.plan-title{font-size:15px;font-weight:700;letter-spacing:-.3px;flex:1}
+.plan-filters{padding:14px 24px;background:var(--white);border-bottom:1px solid var(--border);display:flex;gap:10px;align-items:center;flex-wrap:wrap;flex-shrink:0}
+.plan-filter-label{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--text-3)}
+.plan-sel{background:var(--bg);border:1.5px solid var(--border-s);border-radius:var(--r-s);padding:7px 12px;font-family:inherit;font-size:13px;color:var(--text);outline:none;cursor:pointer;-webkit-appearance:none;transition:var(--t)}
+.plan-sel:focus{border-color:var(--accent)}
+.plan-date-in{background:var(--bg);border:1.5px solid var(--border-s);border-radius:var(--r-s);padding:7px 12px;font-family:inherit;font-size:13px;color:var(--text);outline:none;transition:var(--t)}
+.plan-date-in:focus{border-color:var(--accent)}
+.plan-sep{width:1px;height:20px;background:var(--border-s)}
+.plan-body{flex:1;overflow:auto;padding:16px 24px}
+.plan-table{width:100%;border-collapse:collapse;font-size:13px}
+.plan-table th{text-align:left;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text-3);padding:8px 12px;border-bottom:2px solid var(--border-s);white-space:nowrap;background:var(--white);position:sticky;top:0;z-index:1}
+.plan-table td{padding:11px 12px;border-bottom:1px solid var(--border);vertical-align:middle;background:var(--white)}
+.plan-table tr:hover td{background:var(--accent-l)}
+.plan-badge{display:inline-flex;align-items:center;gap:4px;padding:2px 9px;border-radius:20px;font-size:11px;font-weight:600}
+.plan-ads-yes{color:var(--red);font-weight:700}
+.plan-ads-no{color:var(--text-3)}
+.plan-link{color:var(--accent);text-decoration:none;font-weight:600}
+.plan-link:hover{text-decoration:underline}
+.plan-row-btn{background:none;border:none;cursor:pointer;color:var(--text-3);padding:3px 6px;border-radius:4px;font-size:13px;transition:var(--t)}
+.plan-row-btn:hover{color:var(--accent);background:var(--accent-l)}
+.plan-empty{text-align:center;padding:48px;color:var(--text-3);font-size:13px}
+.plan-count{font-size:12px;color:var(--text-3);font-weight:500}
+
 @media(max-width:700px){
   .app{grid-template-columns:1fr}
   .sidebar{display:none}
@@ -350,7 +404,8 @@ textarea.fc2{resize:none}
     <div class="top-stats" id="topStats"></div>
     <div class="top-right">
       <div class="save-ind" id="saveInd"><div class="save-ind-dot"></div>Salvo</div>
-      <button class="btn btn-g" onclick="exportCSV()" style="font-size:12px">↓ Exportar CSV</button>
+      <button class="btn btn-g" onclick="openPlanilha()" style="font-size:12px">📋 Planilha</button>
+      <button class="btn btn-g" onclick="exportCSV()" style="font-size:12px">↓ CSV</button>
       <button class="btn btn-p" onclick="openModal()">
         <svg width="11" height="11" viewBox="0 0 11 11" fill="none"><path d="M5.5 1v9M1 5.5h9" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
         Novo Lead
@@ -367,6 +422,7 @@ textarea.fc2{resize:none}
     </div>
     <div class="sb-filters" id="sideFilters"></div>
     <div class="lead-list" id="leadList"></div>
+    <div class="sb-hoje" id="sbHoje"></div>
   </aside>
 
   <main class="content">
@@ -543,6 +599,88 @@ textarea.fc2{resize:none}
   </main>
 </div>
 
+<!-- PLANILHA PAGE -->
+<div class="plan-page" id="planPage">
+  <div class="plan-topbar">
+    <div class="plan-title">📋 Planilha de Leads</div>
+    <span class="plan-count" id="planCount"></span>
+    <button class="btn btn-g" style="font-size:12px" onclick="exportCSVFiltered()">↓ Exportar filtrados</button>
+    <button class="btn btn-g" style="font-size:12px" onclick="closePlanilha()">✕ Fechar</button>
+  </div>
+  <div class="plan-filters">
+    <span class="plan-filter-label">Status</span>
+    <select class="plan-sel" id="planStatus" onchange="renderPlanilha()">
+      <option value="">Todos</option>
+      <option value="novo">Novo</option>
+      <option value="contatado">Contatado</option>
+      <option value="proposta">Proposta</option>
+      <option value="fechado">Fechado</option>
+      <option value="perdido">Perdido</option>
+    </select>
+    <span class="plan-filter-label">Nicho</span>
+    <select class="plan-sel" id="planNiche" onchange="renderPlanilha()">
+      <option value="">Todos</option>
+      <option>Concessionária de Motos</option>
+      <option>Delivery / Restaurante</option>
+      <option>Ecommerce</option>
+      <option>Saúde / Clínicas</option>
+      <option>Educação / Cursos</option>
+      <option>Imóveis</option>
+      <option>Outro</option>
+    </select>
+    <span class="plan-filter-label">Ads</span>
+    <select class="plan-sel" id="planAds" onchange="renderPlanilha()">
+      <option value="">Todos</option>
+      <option value="sim">Com anúncios</option>
+      <option value="nao">Sem anúncios</option>
+      <option value="nd">Não verificado</option>
+    </select>
+    <div class="plan-sep"></div>
+    <span class="plan-filter-label">Período</span>
+    <select class="plan-sel" id="planPeriod" onchange="onPeriodChange()">
+      <option value="todos">Todos os tempos</option>
+      <option value="hoje">Hoje</option>
+      <option value="7d">Últimos 7 dias</option>
+      <option value="30d">Últimos 30 dias</option>
+      <option value="90d">Últimos 90 dias</option>
+      <option value="custom">Personalizado</option>
+    </select>
+    <div id="planCustomDates" style="display:none;display:flex;gap:6px;align-items:center">
+      <input type="date" class="plan-date-in" id="planDateFrom" onchange="renderPlanilha()">
+      <span style="font-size:12px;color:var(--text-3)">até</span>
+      <input type="date" class="plan-date-in" id="planDateTo" onchange="renderPlanilha()">
+    </div>
+    <span class="plan-filter-label" style="margin-left:auto">Ordenar por</span>
+    <select class="plan-sel" id="planSort" onchange="renderPlanilha()">
+      <option value="recent">Mais recentes</option>
+      <option value="name">Nome A-Z</option>
+      <option value="status">Status</option>
+      <option value="followup">Follow-up</option>
+    </select>
+  </div>
+  <div class="plan-body">
+    <table class="plan-table">
+      <thead>
+        <tr>
+          <th>Empresa</th>
+          <th>Nicho</th>
+          <th>Status</th>
+          <th>WhatsApp</th>
+          <th>Instagram</th>
+          <th>Canal</th>
+          <th>Ads Ativos</th>
+          <th>Qtd Ads</th>
+          <th>Follow-up</th>
+          <th>Contatos</th>
+          <th>Cadastro</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody id="planBody"></tbody>
+    </table>
+  </div>
+</div>
+
 <!-- MODAL -->
 <div class="overlay" id="overlay" onclick="overlayClick(event)">
   <div class="modal">
@@ -616,6 +754,9 @@ async function loadLeads() {
     status: r.status, contacts: r.contacts || [],
     notes: r.notes || '', script: r.script || '',
     followup: r.followup || null,
+    followupSeq: r.followup_seq ?? null,
+    adsAtivos: r.ads_ativos || null,
+    adsCount: r.ads_count || null,
     createdAt: r.created_at
   }));
 }
@@ -627,7 +768,9 @@ async function persistLead(lead) {
     whatsapp: lead.whatsapp, instagram: lead.instagram,
     channel: lead.channel, origin: lead.origin, obs: lead.obs,
     status: lead.status, contacts: lead.contacts,
-    notes: lead.notes, script: lead.script, followup: lead.followup||null
+    notes: lead.notes, script: lead.script, followup: lead.followup||null,
+    followup_seq: lead.followupSeq??null,
+    ads_ativos: lead.adsAtivos||null, ads_count: lead.adsCount||null
   });
   if (error) toast('Erro ao salvar: ' + error.message);
   hideSave();
@@ -648,7 +791,7 @@ function showSave() { document.getElementById('saveInd')?.classList.add('show');
 function hideSave() { setTimeout(() => document.getElementById('saveInd')?.classList.remove('show'), 1400); }
 
 // ── RENDER ────────────────────────────────
-function renderAll() { renderFilters(); renderLeads(); renderKanban(); updateStats(); }
+function renderAll() { renderFilters(); renderLeads(); renderKanban(); updateStats(); renderSbHoje(); }
 
 function updateStats() {
   const t = leads.length, p = leads.filter(l=>l.status==='proposta').length, f = leads.filter(l=>l.status==='fechado').length;
@@ -766,11 +909,29 @@ function renderDetail() {
     <div class="card">
       <div class="ch">
         <div class="ct"><span class="ct-i">📣</span> Meta Ads Library</div>
-        ${l.instagram ? `<button class="btn btn-g" style="font-size:12px;padding:6px 14px" onclick="checkAdsLibrary('${l.instagram.replace('@','')}')">🔍 Verificar Anúncios</button>` : '<span style="font-size:12px;color:var(--text-3)">Adicione o Instagram para verificar</span>'}
+        ${l.instagram ? `<button class="btn btn-g" style="font-size:12px;padding:6px 14px" onclick="checkAdsLibrary('${l.instagram.replace('@','')}')">🔍 Abrir Ads Library</button>` : '<span style="font-size:12px;color:var(--text-3)">Adicione o Instagram para verificar</span>'}
       </div>
-      <div id="adsResult" style="padding:0 20px">
-        <div style="padding:14px 0;font-size:13px;color:var(--text-3);font-style:italic">
-          ${l.instagram ? 'Clique em Verificar para checar se este perfil está rodando anúncios no Facebook/Instagram.' : ''}
+      <div class="ads-result-area">
+        <div class="ads-status-row">
+          <span style="font-size:12px;font-weight:600;color:var(--text-2)">Anúncios ativos?</span>
+          <div class="ads-toggle">
+            <button class="ads-opt ${l.adsAtivos==='sim'?'active-yes':''}" onclick="setAds('sim')">✓ Sim</button>
+            <button class="ads-opt ${l.adsAtivos==='nao'?'active-no':''}" onclick="setAds('nao')">✕ Não</button>
+          </div>
+          <span class="ads-saved" id="adsSaved">Salvo ✓</span>
+        </div>
+        ${l.adsAtivos==='sim' ? `
+        <div class="ads-count-row">
+          <span style="font-size:12px;color:var(--text-2);font-weight:600">Quantidade de anúncios:</span>
+          <input type="number" class="ads-count-in" id="adsCountIn" value="${l.adsCount||''}" min="0" placeholder="0" onchange="saveAdsCount()">
+          <span style="font-size:12px;color:var(--text-3)">anúncios</span>
+        </div>` : ''}
+        <div class="ads-info-box">
+          ${l.adsAtivos==='sim'
+            ? `🔴 <strong>Lead já investe em ads.</strong> Aborde oferecendo melhores resultados ou auditoria da conta. Mostre que você consegue reduzir o custo por resultado.`
+            : l.adsAtivos==='nao'
+            ? `🟢 <strong>Lead não roda ads.</strong> Oportunidade perfeita para apresentar tráfego pago como alavanca de crescimento. Mostre cases do mesmo nicho.`
+            : `💡 Clique em <strong>Abrir Ads Library</strong>, verifique os anúncios e registre o resultado aqui.`}
         </div>
       </div>
     </div>
@@ -883,9 +1044,33 @@ async function saveNotes() {
 async function addContact() {
   const l = getLead(curId), inp = document.getElementById('cIn'), ch = document.getElementById('cCh').value, txt = inp.value.trim();
   if (!l || !txt) return;
+  const isPrimeiro = l.contacts.length === 0;
   l.contacts.push({ date: new Date().toISOString(), text: txt, channel: ch });
+
+  // Follow-up automático no 1º contato — D+1
+  if (isPrimeiro) {
+    const d1 = new Date(); d1.setDate(d1.getDate() + 1);
+    l.followup = d1.toISOString().split('T')[0];
+    l.followupSeq = 0; // índice da sequência atual
+    toast('📅 Follow-up D+1 agendado automaticamente!');
+  } else {
+    // Avançar sequência se já tem followup
+    const seq = [1, 3, 7, 14];
+    const cur = l.followupSeq ?? -1;
+    const next = cur + 1;
+    if (next < seq.length) {
+      const dn = new Date(); dn.setDate(dn.getDate() + seq[next] - (seq[cur]||0));
+      // calcula dias a partir do 1º contato
+      const firstContact = new Date(l.contacts[0].date);
+      const nextDay = new Date(firstContact); nextDay.setDate(nextDay.getDate() + seq[next]);
+      l.followup = nextDay.toISOString().split('T')[0];
+      l.followupSeq = next;
+      toast(`📅 Follow-up D+${seq[next]} agendado!`);
+    }
+  }
+
   await persistLead(l); inp.value = '';
-  renderLeads(); renderDetail();
+  renderLeads(); renderDetail(); renderSbHoje();
 }
 
 // ── SCRIPT AI ─────────────────────────────
@@ -1009,6 +1194,153 @@ async function saveLead() {
 
 // ── ADS LIBRARY ───────────────────────────
 function checkAdsLibrary(instagram) {
+  const handle = instagram.replace('@','').trim();
+  const url = `https://www.facebook.com/ads/library/?active_status=active&ad_type=all&country=BR&q=${encodeURIComponent(handle)}&search_type=keyword_unordered`;
+  window.open(url, '_blank');
+}
+
+async function setAds(val) {
+  const l = getLead(curId); if (!l) return;
+  l.adsAtivos = val;
+  if (val === 'nao') l.adsCount = null;
+  await persistLead(l);
+  const s = document.getElementById('adsSaved');
+  if (s) { s.classList.add('show'); setTimeout(()=>s.classList.remove('show'),2000); }
+  renderDetail();
+}
+
+async function saveAdsCount() {
+  const l = getLead(curId); if (!l) return;
+  l.adsCount = document.getElementById('adsCountIn')?.value || null;
+  await persistLead(l);
+  const s = document.getElementById('adsSaved');
+  if (s) { s.classList.add('show'); setTimeout(()=>s.classList.remove('show'),2000); }
+}
+
+// ── SIDEBAR HOJE ──────────────────────────
+function renderSbHoje() {
+  const today = new Date(); today.setHours(0,0,0,0);
+  const in7 = new Date(today); in7.setDate(today.getDate()+7);
+  const fuLeads = leads
+    .filter(l => l.followup)
+    .map(l => ({ ...l, fuDate: new Date(l.followup + 'T12:00:00') }))
+    .filter(l => l.fuDate <= in7)
+    .sort((a,b) => a.fuDate - b.fuDate)
+    .slice(0, 8);
+
+  const el = document.getElementById('sbHoje');
+  if (!el) return;
+  if (!fuLeads.length) { el.innerHTML = ''; return; }
+
+  el.innerHTML = `<div class="sb-hoje-title">⏰ Para contatar</div>` +
+    fuLeads.map(l => {
+      const isToday = l.fuDate.toDateString() === today.toDateString();
+      const isOverdue = l.fuDate < today;
+      const label = isOverdue ? 'Atrasado' : isToday ? 'Hoje' : l.fuDate.toLocaleDateString('pt-BR',{day:'2-digit',month:'short'});
+      const cls = isOverdue ? 'hoje-overdue' : isToday ? 'hoje-today' : 'hoje-soon';
+      return `<div class="hoje-item" onclick="selectLead('${l.id}');switchView('detail',null)">
+        <div class="hoje-dot" style="background:${getColor(l.status)}"></div>
+        <div class="hoje-body">
+          <div class="hoje-name">${esc(l.name)}</div>
+          <div class="hoje-when ${cls}">${label}</div>
+        </div>
+      </div>`;
+    }).join('');
+}
+
+// ── PLANILHA ──────────────────────────────
+function openPlanilha() {
+  document.getElementById('planPage').classList.add('open');
+  renderPlanilha();
+}
+function closePlanilha() { document.getElementById('planPage').classList.remove('open'); }
+
+function onPeriodChange() {
+  const val = document.getElementById('planPeriod').value;
+  const custom = document.getElementById('planCustomDates');
+  custom.style.display = val === 'custom' ? 'flex' : 'none';
+  renderPlanilha();
+}
+
+function getPlanFiltered() {
+  const status = document.getElementById('planStatus').value;
+  const niche = document.getElementById('planNiche').value;
+  const ads = document.getElementById('planAds').value;
+  const period = document.getElementById('planPeriod').value;
+  const sort = document.getElementById('planSort').value;
+  const dateFrom = document.getElementById('planDateFrom').value;
+  const dateTo = document.getElementById('planDateTo').value;
+
+  const now = new Date(); now.setHours(23,59,59,999);
+  let from = null, to = now;
+  if (period === 'hoje') { from = new Date(); from.setHours(0,0,0,0); }
+  else if (period === '7d') { from = new Date(now); from.setDate(now.getDate()-7); }
+  else if (period === '30d') { from = new Date(now); from.setDate(now.getDate()-30); }
+  else if (period === '90d') { from = new Date(now); from.setDate(now.getDate()-90); }
+  else if (period === 'custom') {
+    if (dateFrom) { from = new Date(dateFrom+'T00:00:00'); }
+    if (dateTo) { to = new Date(dateTo+'T23:59:59'); }
+  }
+
+  let list = leads.filter(l => {
+    if (status && l.status !== status) return false;
+    if (niche && l.niche !== niche) return false;
+    if (ads === 'sim' && l.adsAtivos !== 'sim') return false;
+    if (ads === 'nao' && l.adsAtivos !== 'nao') return false;
+    if (ads === 'nd' && l.adsAtivos) return false;
+    const d = new Date(l.createdAt);
+    if (from && d < from) return false;
+    if (to && d > to) return false;
+    return true;
+  });
+
+  if (sort === 'name') list.sort((a,b)=>a.name.localeCompare(b.name));
+  else if (sort === 'status') list.sort((a,b)=>STATUSES.indexOf(a.status)-STATUSES.indexOf(b.status));
+  else if (sort === 'followup') list.sort((a,b)=>(a.followup||'9999')>(b.followup||'9999')?1:-1);
+  else list.sort((a,b)=>new Date(b.createdAt)-new Date(a.createdAt));
+
+  return list;
+}
+
+function renderPlanilha() {
+  const list = getPlanFiltered();
+  document.getElementById('planCount').textContent = list.length + ' lead' + (list.length!==1?'s':'');
+  document.getElementById('planBody').innerHTML = list.length
+    ? list.map(l => `
+      <tr>
+        <td style="font-weight:600;min-width:140px">${esc(l.name)}</td>
+        <td style="color:var(--text-2);min-width:140px">${esc(l.niche)}</td>
+        <td><span class="plan-badge c-${l.status}">${SL[l.status]}</span></td>
+        <td>${l.whatsapp ? `<a class="plan-link" href="https://wa.me/55${l.whatsapp.replace(/\D/g,'')}" target="_blank">${esc(l.whatsapp)}</a>` : '<span style="color:var(--text-3)">—</span>'}</td>
+        <td>${l.instagram ? `<a class="plan-link" href="https://instagram.com/${l.instagram.replace('@','')}" target="_blank">${esc(l.instagram)}</a>` : '<span style="color:var(--text-3)">—</span>'}</td>
+        <td>${CI[l.channel]||''} ${esc(l.channel)}</td>
+        <td>${l.adsAtivos==='sim' ? '<span class="plan-ads-yes">🔴 Sim</span>' : l.adsAtivos==='nao' ? '<span class="plan-ads-no">🟢 Não</span>' : '<span style="color:var(--text-3)">—</span>'}</td>
+        <td style="text-align:center">${l.adsCount||'—'}</td>
+        <td style="white-space:nowrap">${l.followup ? `<span style="font-size:12px;font-weight:600;color:${new Date(l.followup+'T12:00:00')<new Date()?'var(--red)':'var(--accent)'}">${new Date(l.followup+'T12:00:00').toLocaleDateString('pt-BR')}</span>` : '<span style="color:var(--text-3)">—</span>'}</td>
+        <td style="text-align:center">${l.contacts.length}</td>
+        <td style="white-space:nowrap;color:var(--text-3);font-size:12px">${new Date(l.createdAt).toLocaleDateString('pt-BR')}</td>
+        <td><button class="plan-row-btn" onclick="closePlanilha();selectLead('${l.id}');switchView('detail',null)">→</button></td>
+      </tr>`).join('')
+    : `<tr><td colspan="12" class="plan-empty">Nenhum lead com esses filtros</td></tr>`;
+}
+
+function exportCSVFiltered() {
+  const list = getPlanFiltered();
+  const headers = ['Nome','Nicho','Status','WhatsApp','Instagram','Canal','Ads Ativos','Qtd Ads','Follow-up','Contatos','Cadastro'];
+  const rows = list.map(l=>[
+    l.name, l.niche, SL[l.status]||l.status, l.whatsapp, l.instagram,
+    l.channel, l.adsAtivos||'', l.adsCount||'',
+    l.followup ? new Date(l.followup+'T12:00:00').toLocaleDateString('pt-BR') : '',
+    l.contacts.length, new Date(l.createdAt).toLocaleDateString('pt-BR')
+  ].map(v=>'"'+String(v||'').replace(/"/g,'""')+'"'));
+  const csv = [headers.join(','), ...rows.map(r=>r.join(','))].join('\n');
+  const blob = new Blob(['\uFEFF'+csv], {type:'text/csv;charset=utf-8'});
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+  a.download = 'leads_filtrados_' + new Date().toISOString().split('T')[0] + '.csv'; a.click();
+  toast('📥 CSV exportado!');
+}
+
+// ── ADS LIBRARY (old stub kept) ───────────
   const handle = instagram.replace('@','').trim();
   const el = document.getElementById('adsResult');
   if (!el) return;

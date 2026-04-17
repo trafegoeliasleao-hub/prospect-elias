@@ -216,7 +216,84 @@ textarea.fc2{resize:none}
 .c-fechado{background:rgba(52,199,89,.15);color:#1e7a3a}
 .c-perdido{background:rgba(255,59,48,.1);color:#ff3b30}
 
-/* BUSCAR LEADS */
+/* DASHBOARD */
+.dash-wrap{padding:24px 32px;display:flex;flex-direction:column;gap:20px;max-width:900px}
+.dash-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+.dash-card{background:var(--white);border-radius:var(--r-l);box-shadow:var(--sh);padding:20px}
+.dash-card-label{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--text-3);margin-bottom:8px}
+.dash-card-value{font-size:28px;font-weight:700;letter-spacing:-1px;color:var(--text);line-height:1}
+.dash-card-sub{font-size:12px;color:var(--text-3);margin-top:4px}
+.dash-card-accent{border-top:3px solid var(--accent)}
+.dash-card-green{border-top:3px solid var(--green)}
+.dash-card-orange{border-top:3px solid var(--orange)}
+.dash-card-red{border-top:3px solid var(--red)}
+
+/* METAS */
+.meta-card{background:var(--white);border-radius:var(--r-l);box-shadow:var(--sh);overflow:hidden}
+.meta-body{padding:20px;display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.meta-item{}
+.meta-item-top{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
+.meta-item-label{font-size:13px;font-weight:600;color:var(--text)}
+.meta-item-val{font-size:13px;font-weight:700;color:var(--accent)}
+.meta-bar{height:6px;background:var(--bg);border-radius:3px;overflow:hidden}
+.meta-bar-fill{height:100%;border-radius:3px;background:var(--accent);transition:width .6s cubic-bezier(.25,.46,.45,.94)}
+.meta-bar-fill.green{background:var(--green)}
+.meta-bar-fill.orange{background:var(--orange)}
+.meta-input-row{display:flex;align-items:center;gap:8px;margin-top:8px}
+.meta-input{width:64px;background:var(--bg);border:1.5px solid transparent;border-radius:var(--r-s);padding:6px 10px;font-family:inherit;font-size:13px;font-weight:600;color:var(--text);outline:none;text-align:center;transition:var(--t)}
+.meta-input:focus{border-color:var(--accent);background:var(--white)}
+.meta-input-label{font-size:12px;color:var(--text-3)}
+
+/* NICHO CHART */
+.nicho-list{padding:16px 20px;display:flex;flex-direction:column;gap:10px}
+.nicho-row{display:flex;align-items:center;gap:10px}
+.nicho-label{font-size:12px;font-weight:500;color:var(--text-2);width:160px;flex-shrink:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.nicho-bar-wrap{flex:1;height:6px;background:var(--bg);border-radius:3px;overflow:hidden}
+.nicho-bar{height:100%;border-radius:3px;background:var(--accent);transition:width .6s ease}
+.nicho-count{font-size:11px;font-weight:600;color:var(--text-3);width:20px;text-align:right;flex-shrink:0}
+
+/* FOLLOW-UP ALERTS */
+.fu-list{padding:4px 20px;max-height:280px;overflow-y:auto;scrollbar-width:none}
+.fu-list::-webkit-scrollbar{display:none}
+.fu-item{display:flex;align-items:center;gap:12px;padding:11px 0;border-bottom:1px solid var(--border);cursor:pointer;transition:var(--t)}
+.fu-item:last-child{border-bottom:none}
+.fu-item:hover .fu-name{color:var(--accent)}
+.fu-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+.fu-body{flex:1}
+.fu-name{font-size:13px;font-weight:600;color:var(--text);transition:var(--t)}
+.fu-date{font-size:11px;color:var(--text-3);margin-top:1px}
+.fu-overdue{color:var(--red)!important;font-weight:600}
+.fu-badge{font-size:10px;font-weight:700;padding:2px 8px;border-radius:20px;flex-shrink:0}
+.fu-badge-overdue{background:rgba(255,59,48,.1);color:var(--red)}
+.fu-badge-today{background:rgba(255,149,0,.1);color:var(--orange)}
+.fu-badge-soon{background:rgba(0,113,227,.08);color:var(--accent)}
+.fu-empty{padding:20px 0;text-align:center;color:var(--text-3);font-size:13px}
+
+/* LEMBRETE NO DETALHE */
+.fu-section{background:var(--white);border-radius:var(--r-l);box-shadow:var(--sh);overflow:hidden}
+.fu-set-row{display:flex;gap:8px;padding:14px 20px;border-top:1px solid var(--border);align-items:center}
+.fu-date-in{flex:1;background:var(--bg);border:1.5px solid transparent;border-radius:var(--r-s);padding:8px 12px;font-family:inherit;font-size:13px;color:var(--text);outline:none;transition:var(--t)}
+.fu-date-in:focus{border-color:var(--accent);background:var(--white)}
+.fu-current{padding:12px 20px;font-size:12.5px;color:var(--text-2);display:flex;align-items:center;justify-content:space-between}
+.fu-clear{background:none;border:none;cursor:pointer;color:var(--text-3);font-size:12px;font-family:inherit;padding:2px 6px;border-radius:4px;transition:var(--t)}
+.fu-clear:hover{color:var(--red)}
+
+/* TEMPLATES */
+.tpl-list{padding:12px 20px;display:flex;flex-direction:column;gap:8px;max-height:300px;overflow-y:auto;scrollbar-width:none}
+.tpl-list::-webkit-scrollbar{display:none}
+.tpl-item{background:var(--bg);border-radius:var(--r);padding:12px 14px;cursor:pointer;transition:var(--t);border:1.5px solid transparent;position:relative}
+.tpl-item:hover{border-color:var(--accent);background:var(--accent-l)}
+.tpl-name{font-size:13px;font-weight:600;margin-bottom:3px}
+.tpl-preview{font-size:12px;color:var(--text-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding-right:60px}
+.tpl-actions{position:absolute;right:10px;top:50%;transform:translateY(-50%);display:flex;gap:4px}
+.tpl-use{font-size:11px;padding:4px 10px;border-radius:980px;background:var(--accent);color:#fff;border:none;cursor:pointer;font-family:inherit;font-weight:600;white-space:nowrap}
+.tpl-del{font-size:11px;padding:4px 8px;border-radius:980px;background:transparent;color:var(--text-3);border:1px solid var(--border-s);cursor:pointer;font-family:inherit}
+.tpl-del:hover{color:var(--red);border-color:var(--red)}
+.tpl-save-row{padding:12px 20px;border-top:1px solid var(--border);display:flex;gap:8px}
+.tpl-name-in{flex:1;background:var(--bg);border:1.5px solid transparent;border-radius:var(--r-s);padding:8px 12px;font-family:inherit;font-size:13px;color:var(--text);outline:none;transition:var(--t)}
+.tpl-name-in:focus{border-color:var(--accent);background:var(--white)}
+.tpl-name-in::placeholder{color:var(--text-3)}
+.tpl-empty{padding:20px;text-align:center;color:var(--text-3);font-size:13px}
 .busca-wrap{padding:28px 32px;display:flex;flex-direction:column;gap:20px;max-width:860px}
 .busca-config{background:var(--white);border-radius:var(--r-l);box-shadow:var(--sh);overflow:hidden}
 .busca-config-body{padding:20px;display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px}
@@ -273,6 +350,7 @@ textarea.fc2{resize:none}
     <div class="top-stats" id="topStats"></div>
     <div class="top-right">
       <div class="save-ind" id="saveInd"><div class="save-ind-dot"></div>Salvo</div>
+      <button class="btn btn-g" onclick="exportCSV()" style="font-size:12px">↓ Exportar CSV</button>
       <button class="btn btn-p" onclick="openModal()">
         <svg width="11" height="11" viewBox="0 0 11 11" fill="none"><path d="M5.5 1v9M1 5.5h9" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
         Novo Lead
@@ -296,7 +374,8 @@ textarea.fc2{resize:none}
       <div class="vt">
         <button class="vb active" onclick="switchView('detail',this)">Detalhe</button>
         <button class="vb" onclick="switchView('kanban',this)">Funil</button>
-        <button class="vb" onclick="switchView('busca',this)">🔍 Buscar Leads</button>
+        <button class="vb" onclick="switchView('dash',this)">📊 Dashboard</button>
+        <button class="vb" onclick="switchView('busca',this)">🔍 Buscar</button>
       </div>
       <span id="countLbl" style="font-size:12px;color:var(--text-3);font-weight:500"></span>
     </div>
@@ -308,6 +387,66 @@ textarea.fc2{resize:none}
           <div class="es-title">Nenhum lead selecionado</div>
           <div class="es-sub">Selecione um lead ou adicione um novo</div>
         </div>
+      </div>
+    </div>
+
+    <div class="view" id="view-dash">
+      <div class="dash-wrap">
+
+        <!-- MÉTRICAS -->
+        <div class="dash-grid" id="dashMetrics"></div>
+
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px">
+
+          <!-- METAS DIÁRIAS -->
+          <div class="meta-card">
+            <div class="ch"><div class="ct"><span class="ct-i">🎯</span> Metas Diárias</div><span style="font-size:11px;color:var(--text-3)" id="metaData"></span></div>
+            <div class="meta-body">
+              <div class="meta-item">
+                <div class="meta-item-top">
+                  <div class="meta-item-label">Prospecções hoje</div>
+                  <div class="meta-item-val" id="metaProspVal">0 / <input class="meta-input" id="metaProspGoal" type="number" min="1" max="50" value="10" onchange="saveMetas()"></div>
+                </div>
+                <div class="meta-bar"><div class="meta-bar-fill" id="metaProspBar" style="width:0%"></div></div>
+              </div>
+              <div class="meta-item">
+                <div class="meta-item-top">
+                  <div class="meta-item-label">Leads adicionados</div>
+                  <div class="meta-item-val" id="metaLeadVal">0 / <input class="meta-input" id="metaLeadGoal" type="number" min="1" max="50" value="5" onchange="saveMetas()"></div>
+                </div>
+                <div class="meta-bar"><div class="meta-bar-fill orange" id="metaLeadBar" style="width:0%"></div></div>
+              </div>
+              <div class="meta-item">
+                <div class="meta-item-top">
+                  <div class="meta-item-label">Propostas enviadas</div>
+                  <div class="meta-item-val" id="metaPropVal">0 / <input class="meta-input" id="metaPropGoal" type="number" min="1" max="20" value="2" onchange="saveMetas()"></div>
+                </div>
+                <div class="meta-bar"><div class="meta-bar-fill green" id="metaPropBar" style="width:0%"></div></div>
+              </div>
+              <div class="meta-item">
+                <div class="meta-item-top">
+                  <div class="meta-item-label">Follow-ups feitos</div>
+                  <div class="meta-item-val" id="metaFuVal">0 / <input class="meta-input" id="metaFuGoal" type="number" min="1" max="30" value="5" onchange="saveMetas()"></div>
+                </div>
+                <div class="meta-bar"><div class="meta-bar-fill" id="metaFuBar" style="width:0%"></div></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- FOLLOW-UPS PENDENTES -->
+          <div class="meta-card">
+            <div class="ch"><div class="ct"><span class="ct-i">⏰</span> Follow-ups Pendentes</div><span class="fc" id="fuCount">0</span></div>
+            <div class="fu-list" id="fuList"></div>
+          </div>
+
+        </div>
+
+        <!-- LEADS POR NICHO -->
+        <div class="meta-card">
+          <div class="ch"><div class="ct"><span class="ct-i">📈</span> Leads por Nicho</div></div>
+          <div class="nicho-list" id="nichoList"></div>
+        </div>
+
       </div>
     </div>
 
@@ -476,6 +615,7 @@ async function loadLeads() {
     channel: r.channel, origin: r.origin, obs: r.obs,
     status: r.status, contacts: r.contacts || [],
     notes: r.notes || '', script: r.script || '',
+    followup: r.followup || null,
     createdAt: r.created_at
   }));
 }
@@ -487,7 +627,7 @@ async function persistLead(lead) {
     whatsapp: lead.whatsapp, instagram: lead.instagram,
     channel: lead.channel, origin: lead.origin, obs: lead.obs,
     status: lead.status, contacts: lead.contacts,
-    notes: lead.notes, script: lead.script
+    notes: lead.notes, script: lead.script, followup: lead.followup||null
   });
   if (error) toast('Erro ao salvar: ' + error.message);
   hideSave();
@@ -651,6 +791,30 @@ function renderDetail() {
       <textarea class="na" id="notesArea" placeholder="Objeções, preferências, próximos passos..." onchange="saveNotes()">${esc(l.notes||'')}</textarea>
     </div>
 
+    <div class="fu-section card">
+      <div class="ch">
+        <div class="ct"><span class="ct-i">⏰</span> Lembrete de Follow-up</div>
+        ${l.followup ? `<button class="fu-clear" onclick="clearFollowup()">✕ Remover</button>` : ''}
+      </div>
+      ${l.followup ? `<div class="fu-current"><span>📅 Agendado para <strong>${new Date(l.followup).toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'long'})}</strong></span></div>` : ''}
+      <div class="fu-set-row">
+        <input type="date" class="fu-date-in" id="fuDateIn" value="${l.followup||''}" min="${new Date().toISOString().split('T')[0]}">
+        <button class="ab" onclick="saveFollowup()">Agendar</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="ch">
+        <div class="ct"><span class="ct-i">💾</span> Templates de Script</div>
+        <span style="font-size:11px;color:var(--text-3)" id="tplCount"></span>
+      </div>
+      <div class="tpl-list" id="tplList"></div>
+      <div class="tpl-save-row">
+        <input class="tpl-name-in" id="tplNameIn" placeholder="Nome do template (ex: Abordagem Moto)...">
+        <button class="ab" onclick="saveTemplate()">Salvar script atual</button>
+      </div>
+    </div>
+
     <div class="card">
       <div class="ch">
         <div class="ct"><span class="ct-i">📋</span> Histórico de Contatos</div>
@@ -675,6 +839,7 @@ function renderDetail() {
       </div>
     </div>
   </div>`;
+  renderTemplates();
 }
 
 function toggleSD() { document.getElementById('statusDD')?.classList.toggle('open'); }
@@ -778,7 +943,7 @@ async function saveLead() {
     channel: document.getElementById('f-ch').value,
     origin: document.getElementById('f-or').value,
     obs: document.getElementById('f-ob').value.trim(),
-    status: 'novo', contacts: [], notes: '', script: '',
+    status: 'novo', contacts: [], notes: '', script: '', followup: null,
     createdAt: new Date().toISOString()
   };
   leads.unshift(l);
@@ -924,6 +1089,203 @@ function ignorarDaBusca(i) {
   if (card) { card.style.opacity = '0.3'; card.style.pointerEvents = 'none'; }
 }
 
+// ── FOLLOW-UP ─────────────────────────────
+async function saveFollowup() {
+  const l = getLead(curId); if (!l) return;
+  const val = document.getElementById('fuDateIn')?.value;
+  if (!val) return;
+  l.followup = val;
+  await persistLead(l);
+  renderDetail(); renderAll();
+  toast('⏰ Follow-up agendado para ' + new Date(val+'T12:00:00').toLocaleDateString('pt-BR'));
+}
+
+async function clearFollowup() {
+  const l = getLead(curId); if (!l) return;
+  l.followup = null;
+  await persistLead(l);
+  renderDetail(); renderAll();
+  toast('Lembrete removido');
+}
+
+// ── TEMPLATES ─────────────────────────────
+function getTemplates() { return JSON.parse(localStorage.getItem('prospect_templates') || '[]'); }
+function saveTemplates(tpls) { localStorage.setItem('prospect_templates', JSON.stringify(tpls)); }
+
+function renderTemplates() {
+  const tpls = getTemplates();
+  const el = document.getElementById('tplList');
+  const cnt = document.getElementById('tplCount');
+  if (!el) return;
+  if (cnt) cnt.textContent = tpls.length + ' salvo' + (tpls.length!==1?'s':'');
+  el.innerHTML = tpls.length
+    ? tpls.map((t,i) => `
+      <div class="tpl-item">
+        <div class="tpl-name">${esc(t.name)}</div>
+        <div class="tpl-preview">${esc(t.text)}</div>
+        <div class="tpl-actions">
+          <button class="tpl-use" onclick="useTemplate(${i})">Usar</button>
+          <button class="tpl-del" onclick="delTemplate(${i})">✕</button>
+        </div>
+      </div>`).join('')
+    : '<div class="tpl-empty">Nenhum template salvo ainda.<br>Gere um script e salve aqui.</div>';
+}
+
+function saveTemplate() {
+  const name = document.getElementById('tplNameIn')?.value.trim();
+  if (!name) { toast('Digite um nome para o template'); return; }
+  if (!scriptTxt) { toast('Gere um script primeiro'); return; }
+  const tpls = getTemplates();
+  tpls.unshift({ name, text: scriptTxt, createdAt: new Date().toISOString() });
+  saveTemplates(tpls);
+  document.getElementById('tplNameIn').value = '';
+  renderTemplates();
+  toast('💾 Template salvo!');
+}
+
+function useTemplate(i) {
+  const tpls = getTemplates();
+  if (!tpls[i]) return;
+  scriptTxt = tpls[i].text;
+  const el = document.getElementById('sTxt');
+  if (el) { el.textContent = scriptTxt; el.classList.remove('emp'); }
+  const l = getLead(curId);
+  if (l) { l.script = scriptTxt; persistLead(l); }
+  toast('✓ Template aplicado');
+}
+
+function delTemplate(i) {
+  const tpls = getTemplates();
+  tpls.splice(i, 1);
+  saveTemplates(tpls);
+  renderTemplates();
+}
+
+// ── DASHBOARD ─────────────────────────────
+function renderDash() {
+  const total = leads.length;
+  const fechados = leads.filter(l=>l.status==='fechado').length;
+  const propostas = leads.filter(l=>l.status==='proposta').length;
+  const taxa = total ? Math.round(fechados/total*100) : 0;
+  const hoje = new Date().toDateString();
+  const contatadosHoje = leads.filter(l=>l.contacts.some(c=>new Date(c.date).toDateString()===hoje)).length;
+
+  document.getElementById('dashMetrics').innerHTML = `
+    <div class="dash-card dash-card-accent">
+      <div class="dash-card-label">Total de Leads</div>
+      <div class="dash-card-value">${total}</div>
+      <div class="dash-card-sub">na base</div>
+    </div>
+    <div class="dash-card dash-card-orange">
+      <div class="dash-card-label">Em Proposta</div>
+      <div class="dash-card-value">${propostas}</div>
+      <div class="dash-card-sub">aguardando resposta</div>
+    </div>
+    <div class="dash-card dash-card-green">
+      <div class="dash-card-label">Fechados</div>
+      <div class="dash-card-value">${fechados}</div>
+      <div class="dash-card-sub">taxa de ${taxa}%</div>
+    </div>
+    <div class="dash-card dash-card-red">
+      <div class="dash-card-label">Contatados Hoje</div>
+      <div class="dash-card-value">${contatadosHoje}</div>
+      <div class="dash-card-sub">leads abordados</div>
+    </div>`;
+
+  // Metas
+  const metas = JSON.parse(localStorage.getItem('prospect_metas') || '{}');
+  const goalP = parseInt(document.getElementById('metaProspGoal')?.value || metas.prospGoal || 10);
+  const goalL = parseInt(document.getElementById('metaLeadGoal')?.value || metas.leadGoal || 5);
+  const goalProp = parseInt(document.getElementById('metaPropGoal')?.value || metas.propGoal || 2);
+  const goalFu = parseInt(document.getElementById('metaFuGoal')?.value || metas.fuGoal || 5);
+
+  if (document.getElementById('metaProspGoal')) document.getElementById('metaProspGoal').value = metas.prospGoal || goalP;
+  if (document.getElementById('metaLeadGoal')) document.getElementById('metaLeadGoal').value = metas.leadGoal || goalL;
+  if (document.getElementById('metaPropGoal')) document.getElementById('metaPropGoal').value = metas.propGoal || goalProp;
+  if (document.getElementById('metaFuGoal')) document.getElementById('metaFuGoal').value = metas.fuGoal || goalFu;
+
+  const leadsHoje = leads.filter(l=>new Date(l.createdAt).toDateString()===hoje).length;
+  const propHoje = leads.filter(l=>l.status==='proposta'&&l.contacts.some(c=>new Date(c.date).toDateString()===hoje)).length;
+  const fuHoje = leads.filter(l=>l.contacts.some(c=>new Date(c.date).toDateString()===hoje&&l.followup)).length;
+
+  const setMeta = (valId, barId, val, goal) => {
+    const pct = Math.min(100, Math.round(val/goal*100));
+    if(document.getElementById(valId)) document.getElementById(valId).childNodes[0].textContent = val + ' / ';
+    if(document.getElementById(barId)) document.getElementById(barId).style.width = pct + '%';
+  };
+  setMeta('metaProspVal','metaProspBar', contatadosHoje, goalP);
+  setMeta('metaLeadVal','metaLeadBar', leadsHoje, goalL);
+  setMeta('metaPropVal','metaPropBar', propHoje, goalProp);
+  setMeta('metaFuVal','metaFuBar', fuHoje, goalFu);
+
+  document.getElementById('metaData').textContent = new Date().toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'long'});
+
+  // Follow-ups pendentes
+  const now = new Date(); now.setHours(0,0,0,0);
+  const fuLeads = leads.filter(l=>l.followup).map(l=>({...l, fuDate: new Date(l.followup+'T12:00:00')}))
+    .filter(l=>l.fuDate >= now || l.fuDate.toDateString()===now.toDateString())
+    .sort((a,b)=>a.fuDate-b.fuDate);
+  const overdue = leads.filter(l=>l.followup&&new Date(l.followup+'T12:00:00')<now);
+
+  document.getElementById('fuCount').textContent = (fuLeads.length+overdue.length) || 0;
+  const allFu = [...overdue.map(l=>({...l,fuDate:new Date(l.followup+'T12:00:00'),isOverdue:true})), ...fuLeads];
+  document.getElementById('fuList').innerHTML = allFu.length
+    ? allFu.map(l => {
+        const isToday = l.fuDate.toDateString()===now.toDateString();
+        const label = l.isOverdue ? 'Atrasado' : isToday ? 'Hoje' : l.fuDate.toLocaleDateString('pt-BR',{day:'2-digit',month:'short'});
+        const badgeCls = l.isOverdue ? 'fu-badge-overdue' : isToday ? 'fu-badge-today' : 'fu-badge-soon';
+        return `<div class="fu-item" onclick="selectLead('${l.id}');switchView('detail',null)">
+          <div class="fu-dot" style="background:${getColor(l.status)}"></div>
+          <div class="fu-body">
+            <div class="fu-name">${esc(l.name)}</div>
+            <div class="fu-date ${l.isOverdue?'fu-overdue':''}">${esc(l.niche)}</div>
+          </div>
+          <span class="fu-badge ${badgeCls}">${label}</span>
+        </div>`;
+      }).join('')
+    : '<div class="fu-empty">Nenhum follow-up agendado</div>';
+
+  // Nicho chart
+  const nichoCounts = {};
+  leads.forEach(l=>{ nichoCounts[l.niche]=(nichoCounts[l.niche]||0)+1; });
+  const nichoSorted = Object.entries(nichoCounts).sort((a,b)=>b[1]-a[1]);
+  const maxN = nichoSorted[0]?.[1] || 1;
+  document.getElementById('nichoList').innerHTML = nichoSorted.length
+    ? nichoSorted.map(([n,c])=>`
+      <div class="nicho-row">
+        <div class="nicho-label">${esc(n)}</div>
+        <div class="nicho-bar-wrap"><div class="nicho-bar" style="width:${Math.round(c/maxN*100)}%"></div></div>
+        <div class="nicho-count">${c}</div>
+      </div>`).join('')
+    : '<div style="padding:20px;text-align:center;color:var(--text-3);font-size:13px">Adicione leads para ver estatísticas</div>';
+}
+
+function saveMetas() {
+  const metas = {
+    prospGoal: document.getElementById('metaProspGoal')?.value,
+    leadGoal: document.getElementById('metaLeadGoal')?.value,
+    propGoal: document.getElementById('metaPropGoal')?.value,
+    fuGoal: document.getElementById('metaFuGoal')?.value,
+  };
+  localStorage.setItem('prospect_metas', JSON.stringify(metas));
+}
+
+// ── EXPORTAR CSV ──────────────────────────
+function exportCSV() {
+  const headers = ['Nome','Nicho','WhatsApp','Instagram','Canal','Origem','Status','Follow-up','Contatos','Observação'];
+  const rows = leads.map(l=>[
+    l.name, l.niche, l.whatsapp, l.instagram, l.channel, l.origin,
+    SL[l.status]||l.status, l.followup||'', l.contacts.length, l.obs||''
+  ].map(v=>'"'+String(v||'').replace(/"/g,'""')+'"'));
+  const csv = [headers.join(','), ...rows.map(r=>r.join(','))].join('\n');
+  const blob = new Blob(['\uFEFF'+csv], {type:'text/csv;charset=utf-8'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'leads_prospect_' + new Date().toISOString().split('T')[0] + '.csv';
+  a.click();
+  toast('📥 CSV exportado!');
+}
+
 // ── VIEW ──────────────────────────────────
 function switchView(v, btn) {
   document.querySelectorAll('.vb').forEach(b => b.classList.remove('active'));
@@ -931,6 +1293,7 @@ function switchView(v, btn) {
   document.querySelectorAll('.view').forEach(e => e.classList.remove('active'));
   document.getElementById('view-'+v).classList.add('active');
   if (v==='kanban') renderKanban();
+  if (v==='dash') renderDash();
 }
 
 // ── TOAST ─────────────────────────────────

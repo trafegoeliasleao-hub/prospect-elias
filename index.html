@@ -323,7 +323,35 @@ textarea.fc2{resize:none}
 .busca-empty{text-align:center;padding:48px 0;color:var(--text-3);font-size:13px}
 .full-col{grid-column:1/-1}
 
-/* SIDEBAR — HOJE */
+/* AVALIAÇÃO DE PERFIL */
+.perfil-toggle{display:flex;gap:6px;flex-wrap:wrap;padding:14px 20px}
+.perfil-opt{padding:6px 14px;border-radius:980px;font-size:12px;font-weight:600;border:1.5px solid var(--border-s);background:transparent;cursor:pointer;font-family:inherit;transition:var(--t);color:var(--text-2)}
+.perfil-opt:hover{border-color:var(--accent);color:var(--accent)}
+.perfil-opt.ruim.sel{background:#ff3b30;color:#fff;border-color:#ff3b30}
+.perfil-opt.bom.sel{background:#34c759;color:#fff;border-color:#34c759}
+.perfil-opt.promissor.sel{background:#ff9500;color:#fff;border-color:#ff9500}
+.perfil-opt.excelente.sel{background:#0071e3;color:#fff;border-color:#0071e3}
+
+/* CNPJ PAINEL */
+.cnpj-row{display:flex;gap:8px;padding:14px 20px;border-top:1px solid var(--border);align-items:center}
+.cnpj-in{flex:1;background:var(--bg);border:1.5px solid transparent;border-radius:var(--r-s);padding:8px 12px;font-family:inherit;font-size:13px;color:var(--text);outline:none;transition:var(--t);letter-spacing:.5px}
+.cnpj-in:focus{border-color:var(--accent);background:var(--white)}
+.cnpj-in::placeholder{color:var(--text-3)}
+.cnpj-data{padding:0 20px 16px;display:flex;flex-direction:column;gap:8px}
+.cnpj-field{display:grid;grid-template-columns:130px 1fr;gap:8px;align-items:baseline}
+.cnpj-label{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.4px;color:var(--text-3)}
+.cnpj-value{font-size:13px;color:var(--text);line-height:1.5}
+.cnpj-links{display:flex;gap:6px;flex-wrap:wrap;padding:12px 20px;border-top:1px solid var(--border)}
+.cnpj-link{font-size:11px;font-weight:600;padding:5px 12px;border-radius:980px;border:1.5px solid var(--border-s);color:var(--text-2);text-decoration:none;transition:var(--t);display:inline-flex;align-items:center;gap:4px}
+.cnpj-link:hover{border-color:var(--accent);color:var(--accent)}
+.cnpj-loading{padding:16px 20px;font-size:13px;color:var(--text-3);display:none;align-items:center;gap:8px}
+.cnpj-loading.show{display:flex}
+.cnpj-empty{padding:14px 20px;font-size:13px;color:var(--text-3);font-style:italic}
+
+/* DUPLICATA ALERT */
+.dup-alert{background:rgba(255,149,0,.1);border:1.5px solid rgba(255,149,0,.3);border-radius:var(--r);padding:10px 14px;font-size:12px;color:#b36200;margin-bottom:12px;display:none;cursor:pointer;transition:var(--t)}
+.dup-alert:hover{background:rgba(255,149,0,.15)}
+.dup-alert.show{display:block}
 .sb-hoje{border-top:1px solid var(--border);padding:8px;flex-shrink:0}
 .sb-hoje-title{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text-3);padding:4px 10px 6px}
 .hoje-item{display:flex;align-items:center;gap:8px;padding:7px 10px;border-radius:var(--r-s);cursor:pointer;transition:var(--t)}
@@ -686,8 +714,9 @@ textarea.fc2{resize:none}
   <div class="modal">
     <div class="m-drag"></div>
     <div class="mt" id="modalTitle">Novo Lead</div>
+    <div class="dup-alert" id="dupAlert" onclick="goToDup()"></div>
     <div class="fr">
-      <div class="fg"><label class="fl">Nome / Empresa</label><input class="fc2" id="f-name" placeholder="Ex: Moto Parauapebas"></div>
+      <div class="fg"><label class="fl">Nome / Empresa</label><input class="fc2" id="f-name" placeholder="Ex: Moto Parauapebas" oninput="checkDuplicate()"></div>
       <div class="fg"><label class="fl">Nicho</label>
         <select class="fc2" id="f-niche">
           <option>Concessionária de Motos</option><option>Delivery / Restaurante</option><option>Ecommerce</option><option>Saúde / Clínicas</option><option>Educação / Cursos</option><option>Imóveis</option><option>Outro</option>
@@ -695,8 +724,8 @@ textarea.fc2{resize:none}
       </div>
     </div>
     <div class="fr">
-      <div class="fg"><label class="fl">WhatsApp</label><input class="fc2" id="f-wa" placeholder="(94) 99999-0000"></div>
-      <div class="fg"><label class="fl">Instagram</label><input class="fc2" id="f-ig" placeholder="@perfil"></div>
+      <div class="fg"><label class="fl">WhatsApp</label><input class="fc2" id="f-wa" placeholder="(94) 99999-0000" oninput="checkDuplicate()"></div>
+      <div class="fg"><label class="fl">Instagram</label><input class="fc2" id="f-ig" placeholder="@perfil" oninput="checkDuplicate()"></div>
     </div>
     <div class="fr">
       <div class="fg"><label class="fl">Canal Principal</label>
@@ -710,6 +739,7 @@ textarea.fc2{resize:none}
         </select>
       </div>
     </div>
+    <div class="fg"><label class="fl">CNPJ</label><input class="fc2" id="f-cnpj" placeholder="00.000.000/0001-00" oninput="fmtCNPJ(this)"></div>
     <div class="fg"><label class="fl">Observação</label><textarea class="fc2" id="f-ob" rows="2" placeholder="Perfil ativo, sem tráfego aparente..."></textarea></div>
     <div class="mf">
       <button class="btn btn-g" onclick="closeModal()">Cancelar</button>
@@ -757,6 +787,9 @@ async function loadLeads() {
     followupSeq: r.followup_seq ?? null,
     adsAtivos: r.ads_ativos || null,
     adsCount: r.ads_count || null,
+    cnpj: r.cnpj || null,
+    cnpjData: r.cnpj_data || null,
+    perfilAvaliacao: r.perfil_avaliacao || null,
     createdAt: r.created_at
   }));
 }
@@ -770,7 +803,9 @@ async function persistLead(lead) {
     status: lead.status, contacts: lead.contacts,
     notes: lead.notes, script: lead.script, followup: lead.followup||null,
     followup_seq: lead.followupSeq??null,
-    ads_ativos: lead.adsAtivos||null, ads_count: lead.adsCount||null
+    ads_ativos: lead.adsAtivos||null, ads_count: lead.adsCount||null,
+    cnpj: lead.cnpj||null, cnpj_data: lead.cnpjData||null,
+    perfil_avaliacao: lead.perfilAvaliacao||null
   });
   if (error) toast('Erro ao salvar: ' + error.message);
   hideSave();
@@ -933,6 +968,42 @@ function renderDetail() {
             ? `🟢 <strong>Lead não roda ads.</strong> Oportunidade perfeita para apresentar tráfego pago como alavanca de crescimento. Mostre cases do mesmo nicho.`
             : `💡 Clique em <strong>Abrir Ads Library</strong>, verifique os anúncios e registre o resultado aqui.`}
         </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="ch">
+        <div class="ct"><span class="ct-i">⭐</span> Avaliação do Perfil</div>
+        ${l.perfilAvaliacao ? `<span style="font-size:11px;color:var(--text-3)">Última avaliação salva</span>` : '<span style="font-size:11px;color:var(--text-3)">Após visitar o Instagram, avalie</span>'}
+      </div>
+      <div style="display:flex;align-items:center;gap:12px;padding:14px 20px">
+        ${l.instagram ? `<a href="https://instagram.com/${l.instagram.replace('@','')}" target="_blank" class="btn btn-g" style="font-size:12px;padding:6px 14px;text-decoration:none">📸 Ver Perfil</a>` : ''}
+        <div class="perfil-toggle" style="padding:0;gap:6px">
+          <button class="perfil-opt ruim ${l.perfilAvaliacao==='ruim'?'sel':''}" onclick="setPerfilAvaliacao('ruim')">😕 Ruim</button>
+          <button class="perfil-opt bom ${l.perfilAvaliacao==='bom'?'sel':''}" onclick="setPerfilAvaliacao('bom')">👍 Bom</button>
+          <button class="perfil-opt promissor ${l.perfilAvaliacao==='promissor'?'sel':''}" onclick="setPerfilAvaliacao('promissor')">🔥 Promissor</button>
+          <button class="perfil-opt excelente ${l.perfilAvaliacao==='excelente'?'sel':''}" onclick="setPerfilAvaliacao('excelente')">🚀 Excelente</button>
+        </div>
+        <span class="ads-saved" id="perfilSaved">Salvo ✓</span>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="ch">
+        <div class="ct"><span class="ct-i">🏢</span> CNPJ e Dados da Empresa</div>
+        ${l.instagram||l.name ? `<button class="btn btn-g" style="font-size:12px;padding:6px 14px" onclick="buscarCNPJ()">🔍 Buscar CNPJ</button>` : ''}
+      </div>
+      <div class="cnpj-row">
+        <input class="cnpj-in" id="cnpjIn" placeholder="00.000.000/0001-00" value="${l.cnpj ? fmtCNPJDisplay(l.cnpj) : ''}" oninput="fmtCNPJInput(this)">
+        <button class="ab" onclick="consultarCNPJ()">Consultar</button>
+      </div>
+      <div class="cnpj-loading" id="cnpjLoading"><div class="lb"></div><span style="font-size:12px;color:var(--text-3)">Consultando Receita Federal...</span></div>
+      <div id="cnpjDataArea">${renderCNPJData(l.cnpjData)}</div>
+      <div class="cnpj-links">
+        <a class="cnpj-link" target="_blank" href="https://www.google.com/search?q=${encodeURIComponent((l.instagram||l.name)+' CNPJ')}">🔎 Google</a>
+        <a class="cnpj-link" target="_blank" href="https://www.google.com/maps/search/${encodeURIComponent(l.name||l.instagram||'')}">📍 Google Maps</a>
+        <a class="cnpj-link" target="_blank" href="https://servicos.receita.fazenda.gov.br/Servicos/cnpjreva/Cnpjreva_Solicitacao.asp">🏛️ Receita Federal</a>
+        ${l.cnpj ? `<a class="cnpj-link" target="_blank" href="https://www.google.com/search?q=${encodeURIComponent(l.cnpj+' '+l.name+' telefone')}">📞 Buscar Telefone</a>` : ''}
       </div>
     </div>
 
@@ -1141,9 +1212,11 @@ function openModal(id = null) {
     document.getElementById('f-ch').value = l.channel || 'WhatsApp';
     document.getElementById('f-or').value = l.origin || 'Instagram';
     document.getElementById('f-ob').value = l.obs || '';
+    document.getElementById('f-cnpj').value = l.cnpj || '';
   } else {
-    ['f-name','f-wa','f-ig','f-ob'].forEach(id => document.getElementById(id).value = '');
+    ['f-name','f-wa','f-ig','f-ob','f-cnpj'].forEach(id => document.getElementById(id).value = '');
   }
+  document.getElementById('dupAlert').classList.remove('show');
 
   document.getElementById('overlay').classList.add('open');
   setTimeout(() => document.getElementById('f-name').focus(), 100);
@@ -1156,40 +1229,156 @@ async function saveLead() {
   const name = document.getElementById('f-name').value.trim();
   if (!name) { document.getElementById('f-name').focus(); return; }
 
+  const ig = document.getElementById('f-ig').value.trim().replace('@','').toLowerCase();
+  const wa = document.getElementById('f-wa').value.replace(/\D/g,'');
+  const cnpj = document.getElementById('f-cnpj').value.replace(/\D/g,'');
+
   if (editingId) {
-    // EDITAR lead existente
-    const l = getLead(editingId);
-    if (!l) return;
+    const l = getLead(editingId); if (!l) return;
     l.name = name;
     l.niche = document.getElementById('f-niche').value;
     l.whatsapp = document.getElementById('f-wa').value.trim();
-    l.instagram = document.getElementById('f-ig').value.trim();
+    l.instagram = ig ? '@'+ig : '';
     l.channel = document.getElementById('f-ch').value;
     l.origin = document.getElementById('f-or').value;
     l.obs = document.getElementById('f-ob').value.trim();
+    l.cnpj = cnpj || null;
     await persistLead(l);
-    closeModal();
-    renderAll(); renderDetail();
+    closeModal(); renderAll(); renderDetail();
     toast('✓ Lead atualizado');
   } else {
-    // NOVO lead
     const l = {
       id: crypto.randomUUID(), name,
       niche: document.getElementById('f-niche').value,
       whatsapp: document.getElementById('f-wa').value.trim(),
-      instagram: document.getElementById('f-ig').value.trim(),
+      instagram: ig ? '@'+ig : '',
       channel: document.getElementById('f-ch').value,
       origin: document.getElementById('f-or').value,
       obs: document.getElementById('f-ob').value.trim(),
+      cnpj: cnpj || null, cnpjData: null, perfilAvaliacao: null,
       status: 'novo', contacts: [], notes: '', script: '', followup: null,
+      followupSeq: null, adsAtivos: null, adsCount: null,
       createdAt: new Date().toISOString()
     };
     leads.unshift(l);
     await persistLead(l);
-    closeModal();
-    renderAll(); selectLead(l.id);
+    closeModal(); renderAll(); selectLead(l.id);
     toast('✓ Lead adicionado');
   }
+}
+
+// ── DUPLICATAS ────────────────────────────
+let dupLeadId = null;
+
+function checkDuplicate() {
+  if (editingId) return; // não checa ao editar
+  const name = document.getElementById('f-name').value.trim().toLowerCase();
+  const ig = document.getElementById('f-ig').value.trim().replace('@','').toLowerCase();
+  const wa = document.getElementById('f-wa').value.replace(/\D/g,'');
+
+  let found = null;
+  for (const l of leads) {
+    const sameName = name.length > 3 && l.name.toLowerCase().includes(name);
+    const sameIg = ig.length > 2 && l.instagram && l.instagram.replace('@','').toLowerCase() === ig;
+    const sameWa = wa.length > 7 && l.whatsapp && l.whatsapp.replace(/\D/g,'') === wa;
+    if (sameIg || sameWa || (sameName && (sameIg || sameWa))) { found = l; break; }
+  }
+
+  const alert = document.getElementById('dupAlert');
+  if (found) {
+    dupLeadId = found.id;
+    alert.textContent = `⚠️ Lead similar já existe: "${found.name}" (${SL[found.status]}). Clique para ver.`;
+    alert.classList.add('show');
+  } else {
+    dupLeadId = null;
+    alert.classList.remove('show');
+  }
+}
+
+function goToDup() {
+  if (!dupLeadId) return;
+  closeModal();
+  selectLead(dupLeadId);
+  switchView('detail', null);
+}
+
+// ── CNPJ ──────────────────────────────────
+function fmtCNPJ(input) {
+  let v = input.value.replace(/\D/g,'').slice(0,14);
+  if (v.length > 12) v = v.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/,'$1.$2.$3/$4-$5');
+  else if (v.length > 8) v = v.replace(/^(\d{2})(\d{3})(\d{3})(\d{0,4})/,'$1.$2.$3/$4');
+  else if (v.length > 5) v = v.replace(/^(\d{2})(\d{3})(\d{0,3})/,'$1.$2.$3');
+  else if (v.length > 2) v = v.replace(/^(\d{2})(\d{0,3})/,'$1.$2');
+  input.value = v;
+}
+
+function fmtCNPJInput(input) { fmtCNPJ(input); }
+function fmtCNPJDisplay(cnpj) {
+  const v = String(cnpj).replace(/\D/g,'').padStart(14,'0');
+  return v.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/,'$1.$2.$3/$4-$5');
+}
+
+function buscarCNPJ() {
+  const l = getLead(curId); if (!l) return;
+  const q = (l.instagram||'').replace('@','') || l.name || '';
+  window.open(`https://www.google.com/search?q=${encodeURIComponent(q+' CNPJ')}`, '_blank');
+  window.open(`https://www.google.com/maps/search/${encodeURIComponent(l.name||q)}`, '_blank');
+  window.open('https://servicos.receita.fazenda.gov.br/Servicos/cnpjreva/Cnpjreva_Solicitacao.asp', '_blank');
+  toast('🔍 3 abas abertas para busca de CNPJ');
+}
+
+async function consultarCNPJ() {
+  const l = getLead(curId); if (!l) return;
+  const raw = document.getElementById('cnpjIn')?.value.replace(/\D/g,'');
+  if (!raw || raw.length !== 14) { toast('CNPJ inválido — verifique os 14 dígitos'); return; }
+
+  document.getElementById('cnpjLoading')?.classList.add('show');
+  document.getElementById('cnpjDataArea').innerHTML = '';
+
+  try {
+    const r = await fetch(`https://brasilapi.com.br/api/cnpj/v1/${raw}`);
+    if (!r.ok) throw new Error('não encontrado');
+    const d = await r.json();
+    l.cnpj = raw;
+    l.cnpjData = d;
+    // preencher nome se vazio
+    if (!l.name || l.name.length < 3) { l.name = d.nome_fantasia || d.razao_social; }
+    await persistLead(l);
+    document.getElementById('cnpjDataArea').innerHTML = renderCNPJData(d);
+    renderLeads();
+    toast('✓ CNPJ consultado e dados preenchidos!');
+  } catch(e) {
+    document.getElementById('cnpjDataArea').innerHTML = `<div class="cnpj-empty">CNPJ não encontrado na base da Receita Federal.</div>`;
+    toast('CNPJ não encontrado');
+  }
+  document.getElementById('cnpjLoading')?.classList.remove('show');
+}
+
+function renderCNPJData(d) {
+  if (!d) return '<div class="cnpj-empty">Consulte o CNPJ para ver os dados da empresa.</div>';
+  const socios = (d.qsa||[]).map(s=>s.nome_socio).join(', ') || '—';
+  const cnae = d.cnae_fiscal_descricao || '—';
+  const sit = d.descricao_situacao_cadastral || '—';
+  const fields = [
+    ['Razão Social', d.razao_social||'—'],
+    ['Nome Fantasia', d.nome_fantasia||'—'],
+    ['Situação', sit],
+    ['CNAE', cnae],
+    ['Endereço', [d.logradouro,d.numero,d.bairro,d.municipio,d.uf].filter(Boolean).join(', ')||'—'],
+    ['Sócios', socios],
+    ['Abertura', d.data_inicio_atividade ? new Date(d.data_inicio_atividade).toLocaleDateString('pt-BR') : '—'],
+  ];
+  return `<div class="cnpj-data">${fields.map(([l,v])=>`<div class="cnpj-field"><span class="cnpj-label">${l}</span><span class="cnpj-value">${esc(String(v))}</span></div>`).join('')}</div>`;
+}
+
+// ── AVALIAÇÃO DE PERFIL ────────────────────
+async function setPerfilAvaliacao(val) {
+  const l = getLead(curId); if (!l) return;
+  l.perfilAvaliacao = val;
+  await persistLead(l);
+  const s = document.getElementById('perfilSaved');
+  if (s) { s.classList.add('show'); setTimeout(()=>s.classList.remove('show'),2000); }
+  renderDetail();
 }
 
 // ── ADS LIBRARY ───────────────────────────

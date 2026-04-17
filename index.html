@@ -1340,34 +1340,6 @@ function exportCSVFiltered() {
   toast('📥 CSV exportado!');
 }
 
-// ── ADS LIBRARY (old stub kept) ───────────
-  const handle = instagram.replace('@','').trim();
-  const el = document.getElementById('adsResult');
-  if (!el) return;
-
-  // Link direto para a Meta Ads Library filtrando pelo nome
-  const adsUrl = `https://www.facebook.com/ads/library/?active_status=active&ad_type=all&country=BR&q=${encodeURIComponent(handle)}&search_type=keyword_unordered`;
-  const pageUrl = `https://www.facebook.com/${handle}`;
-
-  el.innerHTML = `
-    <div style="padding:14px 0;display:flex;flex-direction:column;gap:10px">
-      <div style="font-size:13px;color:var(--text-2);line-height:1.6">
-        Acesse os links abaixo para verificar se <strong>@${esc(handle)}</strong> está rodando anúncios ativos no Meta:
-      </div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap">
-        <a href="${adsUrl}" target="_blank" class="btn btn-p" style="font-size:12px;padding:7px 16px;text-decoration:none">
-          📣 Ver na Ads Library
-        </a>
-        <a href="${pageUrl}" target="_blank" class="btn btn-g" style="font-size:12px;padding:7px 16px;text-decoration:none">
-          👤 Ver Página/Perfil
-        </a>
-      </div>
-      <div style="background:var(--bg);border-radius:var(--r);padding:12px 14px;font-size:12px;color:var(--text-2);line-height:1.6">
-        💡 <strong>O que procurar:</strong> Se aparecer anúncios ativos, o lead já investe em tráfego — aborde oferecendo melhoria de resultados. Se não aparecer, é a abertura perfeita para apresentar tráfego pago como oportunidade.
-      </div>
-    </div>`;
-}
-
 // ── BUSCA DE LEADS ────────────────────────
 function toggleTag(el) { el.classList.toggle('on'); }
 function toggleTagExcl(el, groupId) {

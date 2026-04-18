@@ -990,14 +990,24 @@ textarea.fc2{resize:none}
       <div class="fg"><label class="fl">Instagram</label><input class="fc2" id="f-ig" placeholder="@perfil" oninput="checkDuplicate()"></div>
     </div>
     <div class="fr">
-      <div class="fg"><label class="fl">Canal Principal</label>
+      <div class="fg"><label class="fl">Canal de contato</label>
         <select class="fc2" id="f-ch">
-          <option value="WhatsApp">📱 WhatsApp</option><option value="Instagram">📸 Instagram DM</option><option value="Ligação">📞 Ligação</option><option value="Email">✉️ E-mail</option>
+          <option value="WhatsApp">📱 WhatsApp</option>
+          <option value="Instagram">📸 Instagram DM</option>
+          <option value="Ligação">📞 Ligação</option>
+          <option value="Email">✉️ E-mail</option>
         </select>
       </div>
-      <div class="fg"><label class="fl">Origem</label>
+      <div class="fg"><label class="fl">Como chegou até você</label>
         <select class="fc2" id="f-or">
-          <option>Instagram</option><option>Google Maps</option><option>Indicação</option><option>LinkedIn</option><option>Outro</option>
+          <option value="Prospecção Ativa Instagram">🔍 Prospecção Ativa Instagram</option>
+          <option value="Prospecção Ativa WhatsApp">🔍 Prospecção Ativa WhatsApp</option>
+          <option value="Indicação">🤝 Indicação</option>
+          <option value="Google Maps">📍 Google Maps</option>
+          <option value="LinkedIn">💼 LinkedIn</option>
+          <option value="Inbound (veio até mim)">📥 Inbound (veio até mim)</option>
+          <option value="Referência de cliente">⭐ Referência de cliente</option>
+          <option value="Outro">Outro</option>
         </select>
       </div>
     </div>
@@ -1206,6 +1216,7 @@ function renderDetail() {
           <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M2 3.5h10M5 3.5V2.5a.5.5 0 0 1 .5-.5h3a.5.5 0 0 1 .5.5v1M11.5 3.5l-.8 8a.5.5 0 0 1-.5.5H3.8a.5.5 0 0 1-.5-.5l-.8-8" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
         </button>
         <button class="btn btn-g" style="font-size:12px;padding:6px 14px" onclick="openModal('${l.id}')">✏️ Editar</button>
+        ${l.status === 'fechado' ? `<button class="btn btn-p" style="font-size:12px;padding:6px 14px;background:var(--green)" onclick="converterEmCliente('${l.id}')">🤝 Converter em Cliente</button>` : ''}
       </div>
     </div>
 
@@ -2353,12 +2364,6 @@ function fmtMoeda(v) {
 
 function renderClientes() {
   const wrap = document.getElementById('clientesWrap');
-  if (!clientes.length) {
-    wrap.innerHTML = `<div class="clientes-wrap"><div class="empty-s" style="height:300px"><div class="es-icon">🤝</div><div class="es-title">Nenhum cliente ativo</div><div class="es-sub">Adicione seu primeiro cliente</div></div></div>`;
-    return;
-  }
-
-  // verificar vencimentos
   const hoje = new Date(); hoje.setHours(0,0,0,0);
 
   wrap.innerHTML = `
@@ -2370,42 +2375,45 @@ function renderClientes() {
         </div>
         <button class="btn btn-p" onclick="openClienteModal()">+ Novo Cliente</button>
       </div>
-      <div class="clientes-grid">
-        ${clientes.map(c => {
-          const saude = c.saude_cliente?.[0];
-          const score = saude?.score ?? 100;
-          const sc = scoreColor(score);
-          const venc = c.data_vencimento ? new Date(c.data_vencimento+'T12:00:00') : null;
-          const diasVenc = venc ? Math.ceil((venc-hoje)/(1000*60*60*24)) : null;
-          return `
-            <div class="cliente-card ${c.status_pagamento}" onclick="openClienteDetalhe('${c.id}')">
-              <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px">
-                <div>
-                  <div class="cliente-name">${esc(c.name)}</div>
-                  <div class="cliente-niche">${esc(c.niche||'')}</div>
+      ${!clientes.length
+        ? `<div class="empty-s" style="height:260px"><div class="es-icon">🤝</div><div class="es-title">Nenhum cliente ativo ainda</div><div class="es-sub">Clique em "+ Novo Cliente" para adicionar<br>ou converta um lead fechado em cliente</div></div>`
+        : `<div class="clientes-grid">
+          ${clientes.map(c => {
+            const saude = c.saude_cliente?.[0];
+            const score = saude?.score ?? 100;
+            const sc = scoreColor(score);
+            const venc = c.data_vencimento ? new Date(c.data_vencimento+'T12:00:00') : null;
+            const diasVenc = venc ? Math.ceil((venc-hoje)/(1000*60*60*24)) : null;
+            return `
+              <div class="cliente-card ${c.status_pagamento}" onclick="openClienteDetalhe('${c.id}')">
+                <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px">
+                  <div style="flex:1;min-width:0">
+                    <div class="cliente-name">${esc(c.name)}</div>
+                    <div class="cliente-niche">${esc(c.niche||'')}${c.origem_lead?` · via ${esc(c.origem_lead)}`:''}</div>
+                  </div>
+                  <div class="score-circle score-${sc}" title="Score de saúde">${score}</div>
                 </div>
-                <div class="score-circle score-${sc}" title="Score de saúde">${score}</div>
-              </div>
-              <div class="cliente-row">
-                <span class="cliente-label">Contrato</span>
-                <span class="cliente-val">${fmtMoeda(c.valor_contrato)}/mês</span>
-              </div>
-              <div class="cliente-row">
-                <span class="cliente-label">Vencimento</span>
-                <span class="cliente-val" style="color:${diasVenc!=null&&diasVenc<=5?'var(--red)':diasVenc!=null&&diasVenc<=10?'var(--orange)':'var(--text)'}">
-                  ${venc ? venc.toLocaleDateString('pt-BR') : '—'}
-                  ${diasVenc!=null ? (diasVenc<0?` · <strong style="color:var(--red)">${Math.abs(diasVenc)}d atrasado</strong>`:diasVenc===0?' · <strong style="color:var(--orange)">Hoje</strong>':diasVenc<=5?` · ${diasVenc}d`:'') : ''}
-                </span>
-              </div>
-              <div class="cliente-badges">
-                <span class="pag-badge pag-${c.status_pagamento}">${c.status_pagamento==='em_dia'?'✓ Em dia':c.status_pagamento==='atrasado'?'⚠ Atrasado':c.status_pagamento==='trial'?'Trial':'Cancelado'}</span>
-                <span class="contrato-badge">${c.status_contrato==='ativo'?'Ativo':c.status_contrato==='pausado'?'Pausado':'Encerrado'}</span>
-                ${saude?.status_campanhas==='problema'?'<span class="pag-badge pag-atrasado">⚠ Problema nas campanhas</span>':''}
-                ${saude?.dias_sem_contato>=14?`<span class="pag-badge" style="background:rgba(174,174,178,.15);color:var(--text-3)">${saude.dias_sem_contato}d sem contato</span>`:''}
-              </div>
-            </div>`;
-        }).join('')}
-      </div>
+                <div class="cliente-row">
+                  <span class="cliente-label">Contrato</span>
+                  <span class="cliente-val">${fmtMoeda(c.valor_contrato)}/mês</span>
+                </div>
+                <div class="cliente-row">
+                  <span class="cliente-label">Vencimento</span>
+                  <span class="cliente-val" style="color:${diasVenc!=null&&diasVenc<=5?'var(--red)':diasVenc!=null&&diasVenc<=10?'var(--orange)':'var(--text)'}">
+                    ${venc ? venc.toLocaleDateString('pt-BR') : '—'}
+                    ${diasVenc!=null?(diasVenc<0?` · <strong style="color:var(--red)">${Math.abs(diasVenc)}d atrasado</strong>`:diasVenc===0?' · <strong style="color:var(--orange)">Hoje</strong>':diasVenc<=5?` · ${diasVenc}d`:''):''}
+                  </span>
+                </div>
+                <div class="cliente-badges">
+                  <span class="pag-badge pag-${c.status_pagamento}">${c.status_pagamento==='em_dia'?'✓ Em dia':c.status_pagamento==='atrasado'?'⚠ Atrasado':c.status_pagamento==='trial'?'Trial':'Cancelado'}</span>
+                  <span class="contrato-badge">${c.status_contrato==='ativo'?'Ativo':c.status_contrato==='pausado'?'Pausado':'Encerrado'}</span>
+                  ${saude?.status_campanhas==='problema'?'<span class="pag-badge pag-atrasado">⚠ Campanhas</span>':''}
+                  ${saude?.dias_sem_contato>=14?`<span class="pag-badge" style="background:rgba(174,174,178,.15);color:var(--text-3)">${saude.dias_sem_contato}d sem contato</span>`:''}
+                  ${c.plataformas?.length?`<span class="pag-badge" style="background:rgba(0,113,227,.08);color:var(--accent)">${c.plataformas.join(' · ')}</span>`:''}
+                </div>
+              </div>`;
+          }).join('')}
+        </div>`}
     </div>`;
 }
 
@@ -2586,6 +2594,27 @@ function openClienteModal(id = null) {
         </div>
       </div>
       <div class="fg"><label class="fl">Objetivo</label><input class="fc2" id="cl-obj" value="${esc(c?.objetivo||'')}" placeholder="Ex: Aumentar vendas online"></div>
+      <div class="fr">
+        <div class="fg"><label class="fl">Como virou seu cliente</label>
+          <select class="fc2" id="cl-origem">
+            <option value="" ${!c?.origem_lead?'selected':''}>Selecione...</option>
+            <option value="Prospecção Ativa Instagram" ${c?.origem_lead==='Prospecção Ativa Instagram'?'selected':''}>🔍 Prospecção Ativa Instagram</option>
+            <option value="Prospecção Ativa WhatsApp" ${c?.origem_lead==='Prospecção Ativa WhatsApp'?'selected':''}>🔍 Prospecção Ativa WhatsApp</option>
+            <option value="Indicação" ${c?.origem_lead==='Indicação'?'selected':''}>🤝 Indicação</option>
+            <option value="Inbound" ${c?.origem_lead==='Inbound'?'selected':''}>📥 Inbound (veio até mim)</option>
+            <option value="Referência de cliente" ${c?.origem_lead==='Referência de cliente'?'selected':''}>⭐ Referência de cliente</option>
+            <option value="Outro" ${c?.origem_lead==='Outro'?'selected':''}>Outro</option>
+          </select>
+        </div>
+        <div class="fg"><label class="fl">Plataformas que opera</label>
+          <div style="display:flex;flex-wrap:wrap;gap:6px;padding:8px 0">
+            ${['Facebook Ads','Google Ads','Instagram','WhatsApp','TikTok','Site'].map(p=>`
+              <label style="display:flex;align-items:center;gap:5px;font-size:12px;cursor:pointer">
+                <input type="checkbox" value="${p}" ${(c?.plataformas||[]).includes(p)?'checked':''} class="plat-check"> ${p}
+              </label>`).join('')}
+          </div>
+        </div>
+      </div>
       <div class="fg"><label class="fl">Observações</label><textarea class="fc2" id="cl-obs" rows="2">${esc(c?.obs||'')}</textarea></div>
       <div class="mf">
         <button class="btn btn-g" onclick="document.getElementById('clienteOverlay').remove()">Cancelar</button>
@@ -2597,6 +2626,7 @@ function openClienteModal(id = null) {
 }
 
 async function saveCliente() {
+  const plataformas = [...document.querySelectorAll('.plat-check:checked')].map(el=>el.value);
   const payload = {
     name: document.getElementById('cl-name').value.trim(),
     niche: document.getElementById('cl-niche').value.trim(),
@@ -2610,9 +2640,10 @@ async function saveCliente() {
     status_contrato: document.getElementById('cl-cont').value,
     objetivo: document.getElementById('cl-obj').value.trim(),
     obs: document.getElementById('cl-obs').value.trim(),
+    origem_lead: document.getElementById('cl-origem')?.value||null,
+    plataformas: plataformas.length ? plataformas : null,
   };
   if (!payload.name) { toast('Nome é obrigatório'); return; }
-
   if (editClienteId) {
     await sb.from('clientes_ativos').update(payload).eq('id', editClienteId);
   } else {
@@ -2622,6 +2653,106 @@ async function saveCliente() {
   await loadClientes();
   renderClientes();
   toast('✓ Cliente salvo');
+}
+
+// Converter lead em cliente
+function converterEmCliente(leadId) {
+  const l = getLead(leadId); if (!l) return;
+  editClienteId = null;
+  const overlay = document.createElement('div');
+  overlay.className = 'overlay open';
+  overlay.id = 'clienteOverlay';
+  overlay.onclick = e => { if(e.target===overlay) overlay.remove(); };
+  overlay.innerHTML = `
+    <div class="modal" style="max-height:90vh;overflow-y:auto">
+      <div class="m-drag"></div>
+      <div class="mt">🎉 Converter em Cliente</div>
+      <div style="background:rgba(52,199,89,.08);border:1px solid rgba(52,199,89,.2);border-radius:10px;padding:10px 14px;font-size:12px;color:#1a7a3c;margin-bottom:16px">
+        Convertendo <strong>${esc(l.name)}</strong> de lead para cliente ativo
+      </div>
+      <div class="fr">
+        <div class="fg"><label class="fl">Nome / Empresa</label><input class="fc2" id="cl-name" value="${esc(l.name||'')}" placeholder="Nome do cliente"></div>
+        <div class="fg"><label class="fl">Nicho</label><input class="fc2" id="cl-niche" value="${esc(l.niche||'')}" placeholder="Ex: Delivery"></div>
+      </div>
+      <div class="fr">
+        <div class="fg"><label class="fl">WhatsApp</label><input class="fc2" id="cl-wa" value="${esc(l.whatsapp||'')}" placeholder="(94) 99999-0000"></div>
+        <div class="fg"><label class="fl">Instagram</label><input class="fc2" id="cl-ig" value="${esc(l.instagram||'')}" placeholder="@perfil"></div>
+      </div>
+      <div class="fr">
+        <div class="fg"><label class="fl">Valor do contrato (R$)</label><input class="fc2" id="cl-val" type="number" placeholder="0,00"></div>
+        <div class="fg"><label class="fl">Orçamento ads (R$)</label><input class="fc2" id="cl-orc" type="number" placeholder="0,00"></div>
+      </div>
+      <div class="fr">
+        <div class="fg"><label class="fl">Data início</label><input class="fc2" id="cl-ini" type="date" value="${new Date().toISOString().split('T')[0]}"></div>
+        <div class="fg"><label class="fl">Data vencimento</label><input class="fc2" id="cl-venc" type="date"></div>
+      </div>
+      <div class="fr">
+        <div class="fg"><label class="fl">Status pagamento</label>
+          <select class="fc2" id="cl-pag">
+            <option value="em_dia">Em dia</option>
+            <option value="trial">Trial</option>
+            <option value="atrasado">Atrasado</option>
+          </select>
+        </div>
+        <div class="fg"><label class="fl">Status contrato</label>
+          <select class="fc2" id="cl-cont">
+            <option value="ativo">Ativo</option>
+            <option value="trial">Trial</option>
+          </select>
+        </div>
+      </div>
+      <div class="fg"><label class="fl">Como virou seu cliente</label>
+        <select class="fc2" id="cl-origem">
+          <option value="Prospecção Ativa Instagram" ${l.origin?.includes('Instagram')?'selected':''}>🔍 Prospecção Ativa Instagram</option>
+          <option value="Prospecção Ativa WhatsApp" ${l.origin?.includes('WhatsApp')?'selected':''}>🔍 Prospecção Ativa WhatsApp</option>
+          <option value="Indicação" ${l.origin==='Indicação'?'selected':''}>🤝 Indicação</option>
+          <option value="Inbound">📥 Inbound (veio até mim)</option>
+          <option value="Referência de cliente">⭐ Referência de cliente</option>
+          <option value="Outro">Outro</option>
+        </select>
+      </div>
+      <div class="fg"><label class="fl">Plataformas que vai operar</label>
+        <div style="display:flex;flex-wrap:wrap;gap:6px;padding:8px 0">
+          ${['Facebook Ads','Google Ads','Instagram','WhatsApp','TikTok','Site'].map(p=>`
+            <label style="display:flex;align-items:center;gap:5px;font-size:12px;cursor:pointer">
+              <input type="checkbox" value="${p}" class="plat-check"> ${p}
+            </label>`).join('')}
+        </div>
+      </div>
+      <div class="fg"><label class="fl">Objetivo</label><input class="fc2" id="cl-obj" value="${esc(l.obs||'')}" placeholder="Ex: Aumentar vendas online"></div>
+      <div class="fg"><label class="fl">Observações</label><textarea class="fc2" id="cl-obs" rows="2"></textarea></div>
+      <div class="mf">
+        <button class="btn btn-g" onclick="document.getElementById('clienteOverlay').remove()">Cancelar</button>
+        <button class="btn btn-p" onclick="saveClienteConvertido('${l.id}')">✓ Converter em Cliente</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+}
+
+async function saveClienteConvertido(leadId) {
+  const plataformas = [...document.querySelectorAll('.plat-check:checked')].map(el=>el.value);
+  const payload = {
+    lead_id: leadId,
+    name: document.getElementById('cl-name').value.trim(),
+    niche: document.getElementById('cl-niche').value.trim(),
+    whatsapp: document.getElementById('cl-wa').value.trim(),
+    instagram: document.getElementById('cl-ig').value.trim(),
+    valor_contrato: parseFloat(document.getElementById('cl-val').value)||null,
+    orcamento_mensal: parseFloat(document.getElementById('cl-orc').value)||null,
+    data_inicio: document.getElementById('cl-ini').value||null,
+    data_vencimento: document.getElementById('cl-venc').value||null,
+    status_pagamento: document.getElementById('cl-pag').value,
+    status_contrato: document.getElementById('cl-cont').value,
+    objetivo: document.getElementById('cl-obj').value.trim(),
+    obs: document.getElementById('cl-obs').value.trim(),
+    origem_lead: document.getElementById('cl-origem')?.value||null,
+    plataformas: plataformas.length ? plataformas : null,
+  };
+  if (!payload.name) { toast('Nome é obrigatório'); return; }
+  await sb.from('clientes_ativos').insert(payload);
+  document.getElementById('clienteOverlay')?.remove();
+  await loadClientes();
+  toast('🎉 Lead convertido em cliente!');
 }
 
 async function deleteCliente(id) {

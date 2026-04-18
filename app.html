@@ -945,6 +945,14 @@ let sb, leads = [], curId = null, curFilter = 'todos', curST = 'primeiro_contato
 // ── INIT ──────────────────────────────────
 window.onload = async () => {
   sb = supabase.createClient(SB_URL, SB_KEY);
+
+  // Verificar sessão ativa
+  const { data: { session } } = await sb.auth.getSession();
+  if (!session) {
+    window.location.href = 'index.html';
+    return;
+  }
+
   await loadLeads();
   document.getElementById('loadingScreen').style.display = 'none';
   document.getElementById('appRoot').style.display = 'grid';

@@ -159,6 +159,20 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
     <div style="font-size:13px;color:var(--text-2)">Gerencie usuários, permissões e configurações do sistema</div>
   </div>
 
+  <!-- ONLINE AGORA -->
+  <div>
+    <div class="section-title">Online agora</div>
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title"><span class="card-icon">🟢</span> Usuários ativos</div>
+        <button class="btn btn-g btn-sm" onclick="loadOnline()">↺ Atualizar</button>
+      </div>
+      <div id="onlineList">
+        <div class="empty-state"><div class="empty-icon">⏳</div><div class="empty-text">Carregando...</div></div>
+      </div>
+    </div>
+  </div>
+
   <!-- USUÁRIOS -->
   <div>
     <div class="section-title">Usuários do Sistema</div>
@@ -304,7 +318,7 @@ window.onload = async () => {
     const name = profileByEmail.name || currentUser.email.split('@')[0];
     document.getElementById('adminAvatar').textContent = name[0].toUpperCase();
     document.getElementById('adminEmail').textContent = currentUser.email;
-    await Promise.all([loadUsers(), loadApiKeys(), loadLogs()]);
+    await Promise.all([loadOnline(), loadUsers(), loadApiKeys(), loadLogs()]);
     return;
   }
 
@@ -318,8 +332,32 @@ window.onload = async () => {
   document.getElementById('adminAvatar').textContent = name[0].toUpperCase();
   document.getElementById('adminEmail').textContent = currentUser.email;
 
-  await Promise.all([loadUsers(), loadApiKeys(), loadLogs()]);
+  await Promise.all([loadOnline(), loadUsers(), loadApiKeys(), loadLogs()]);
 };
+
+// ── ONLINE AGORA ──────────────────────────
+async function loadOnline() {
+  // Considera online: sessão ativa nos últimos 5 minutos
+  const cincoMin = new Date(Date.now() - 5*60*1000).toISOString();
+  const { data } = await sb.from('user_profiles')
+    .select('email,name,role,last_seen')
+    .gte('last_seen', cincoMin)
+    .order('last_seen', {ascending:false});
+
+  const el = document.getElementById('onlineList');
+  if (!data?.length) {
+    el.innerHTML = '<div class="log-empty">Nenhum usuário ativo nos últimos 5 minutos</div>';
+    return;
+  }
+  el.innerHTML = data.map(u => `
+    <div class="log-item">
+      <div class="log-icon">🟢</div>
+      <div class="log-body">
+        <div class="log-text"><strong>${esc(u.name||u.email)}</strong> · <span class="role-badge role-${u.role}">${u.role}</span></div>
+        <div class="log-date">Visto às ${new Date(u.last_seen).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})}</div>
+      </div>
+    </div>`).join('');
+}
 
 // ── USUÁRIOS ──────────────────────────────
 async function loadUsers() {

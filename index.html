@@ -1,0 +1,418 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Prospect · Entrar</title>
+<link href="https://fonts.googleapis.com/css2?family=Figtree:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --accent:#0071e3;--accent-h:#0077ed;
+  --text:#1d1d1f;--text-2:#6e6e73;--text-3:#aeaeb2;
+  --border:rgba(0,0,0,0.08);--border-s:rgba(0,0,0,0.12);
+  --glass:rgba(255,255,255,0.75);--glass-border:rgba(255,255,255,0.5);
+  --green:#34c759;--red:#ff3b30;
+  --sh-m:0 8px 40px rgba(0,0,0,0.1);
+  --t:.18s cubic-bezier(.25,.46,.45,.94);
+}
+html,body{height:100%;font-family:'Figtree',-apple-system,sans-serif;-webkit-font-smoothing:antialiased}
+body{
+  display:flex;align-items:center;justify-content:center;
+  min-height:100vh;padding:20px;
+  background:#f5f5f7;
+  position:relative;overflow:hidden;
+}
+body::before{
+  content:'';position:fixed;inset:0;
+  background:
+    radial-gradient(ellipse at 10% 10%,rgba(200,120,255,0.12) 0%,transparent 55%),
+    radial-gradient(ellipse at 90% 90%,rgba(255,100,180,0.09) 0%,transparent 50%),
+    radial-gradient(ellipse at 50% 50%,rgba(0,113,227,0.04) 0%,transparent 70%),
+    #f5f5f7;
+  z-index:0;pointer-events:none;
+}
+body::after{
+  content:'';position:fixed;inset:0;
+  background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.75' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.025'/%3E%3C/svg%3E");
+  z-index:0;pointer-events:none;opacity:0.5;
+}
+
+.login-wrap{
+  position:relative;z-index:1;
+  width:100%;max-width:400px;
+  animation:card-in .4s cubic-bezier(.16,1,.3,1);
+}
+@keyframes card-in{from{transform:translateY(24px);opacity:0}to{transform:none;opacity:1}}
+
+.login-logo{
+  text-align:center;margin-bottom:28px;
+}
+.login-logo-text{
+  font-size:26px;font-weight:700;letter-spacing:-.5px;color:var(--text);
+}
+.login-logo-text span{color:var(--accent)}
+.login-logo-sub{font-size:13px;color:var(--text-3);margin-top:4px}
+
+.card{
+  background:var(--glass);
+  backdrop-filter:saturate(180%) blur(28px);
+  -webkit-backdrop-filter:saturate(180%) blur(28px);
+  border:1px solid var(--glass-border);
+  border-radius:20px;
+  padding:32px;
+  box-shadow:var(--sh-m);
+}
+
+.card-title{font-size:18px;font-weight:700;letter-spacing:-.3px;color:var(--text);margin-bottom:4px}
+.card-sub{font-size:13px;color:var(--text-2);margin-bottom:24px}
+
+.fg{margin-bottom:16px}
+.fl{display:block;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--text-3);margin-bottom:6px}
+.fi{
+  width:100%;background:rgba(0,0,0,.04);
+  border:1.5px solid transparent;
+  border-radius:10px;padding:11px 14px;
+  font-family:inherit;font-size:14px;color:var(--text);
+  outline:none;transition:var(--t);
+}
+.fi:focus{border-color:var(--accent);background:#fff;box-shadow:0 0 0 3px rgba(0,113,227,.1)}
+.fi::placeholder{color:var(--text-3)}
+
+.btn{
+  display:flex;align-items:center;justify-content:center;gap:6px;
+  width:100%;padding:12px;border-radius:980px;
+  font-family:inherit;font-size:14px;font-weight:600;
+  border:none;cursor:pointer;transition:var(--t);
+  letter-spacing:-.1px;
+}
+.btn-p{background:var(--accent);color:#fff}
+.btn-p:hover{background:var(--accent-h)}
+.btn-p:active{transform:scale(.98)}
+.btn-p:disabled{opacity:.6;cursor:default;transform:none}
+
+.divider{
+  display:flex;align-items:center;gap:12px;
+  margin:20px 0;color:var(--text-3);font-size:12px;
+}
+.divider::before,.divider::after{
+  content:'';flex:1;height:1px;background:var(--border-s);
+}
+
+.btn-secondary{
+  width:100%;padding:11px;border-radius:980px;
+  font-family:inherit;font-size:13px;font-weight:600;
+  border:1.5px solid var(--border-s);
+  background:rgba(255,255,255,.6);color:var(--text-2);
+  cursor:pointer;transition:var(--t);
+}
+.btn-secondary:hover{background:#fff;color:var(--text)}
+
+.pass-wrap{position:relative}
+.pass-toggle{
+  position:absolute;right:12px;top:50%;transform:translateY(-50%);
+  background:none;border:none;cursor:pointer;
+  color:var(--text-3);padding:4px;transition:var(--t);
+}
+.pass-toggle:hover{color:var(--text-2)}
+
+.alert{
+  padding:10px 14px;border-radius:10px;font-size:13px;
+  margin-bottom:16px;display:none;
+}
+.alert.show{display:block}
+.alert-err{background:rgba(255,59,48,.08);color:var(--red);border:1px solid rgba(255,59,48,.2)}
+.alert-ok{background:rgba(52,199,89,.08);color:#1a7a3c;border:1px solid rgba(52,199,89,.2)}
+
+.forgot-link{
+  display:block;text-align:center;margin-top:14px;
+  font-size:12px;color:var(--text-3);cursor:pointer;
+  transition:var(--t);text-decoration:none;
+}
+.forgot-link:hover{color:var(--accent)}
+
+.loading-dot{
+  display:inline-block;width:6px;height:6px;border-radius:50%;
+  background:#fff;margin:0 2px;
+  animation:dot-pulse 1.2s infinite ease-in-out;
+}
+.loading-dot:nth-child(2){animation-delay:.2s}
+.loading-dot:nth-child(3){animation-delay:.4s}
+@keyframes dot-pulse{0%,80%,100%{transform:scale(.6);opacity:.4}40%{transform:scale(1);opacity:1}}
+
+/* FORGOT PANEL */
+.panel{display:none}
+.panel.active{display:block;animation:card-in .3s cubic-bezier(.16,1,.3,1)}
+
+.back-link{
+  display:inline-flex;align-items:center;gap:5px;
+  font-size:12px;color:var(--text-3);cursor:pointer;
+  margin-bottom:20px;transition:var(--t);
+}
+.back-link:hover{color:var(--accent)}
+
+/* CONVITE */
+.invite-card{
+  background:rgba(0,113,227,.06);
+  border:1px solid rgba(0,113,227,.15);
+  border-radius:12px;padding:14px 16px;
+  font-size:13px;color:var(--text-2);
+  margin-bottom:20px;line-height:1.6;
+}
+.invite-card strong{color:var(--accent)}
+</style>
+</head>
+<body>
+
+<div class="login-wrap">
+  <div class="login-logo">
+    <div class="login-logo-text">Prospect<span>.</span></div>
+    <div class="login-logo-sub">Sistema de prospecção — Elias Leão</div>
+  </div>
+
+  <div class="card">
+
+    <!-- PAINEL LOGIN -->
+    <div class="panel active" id="panelLogin">
+      <div class="card-title">Bem-vindo de volta</div>
+      <div class="card-sub">Entre com seu email e senha</div>
+
+      <div class="alert alert-err" id="loginErr"></div>
+
+      <div class="fg">
+        <label class="fl">Email</label>
+        <input class="fi" id="loginEmail" type="email" placeholder="seu@email.com" autocomplete="email">
+      </div>
+      <div class="fg">
+        <label class="fl">Senha</label>
+        <div class="pass-wrap">
+          <input class="fi" id="loginPass" type="password" placeholder="••••••••" autocomplete="current-password" style="padding-right:44px" onkeydown="if(event.key==='Enter')doLogin()">
+          <button class="pass-toggle" onclick="togglePass('loginPass',this)" tabindex="-1">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M1 8s2.5-5 7-5 7 5 7 5-2.5 5-7 5-7-5-7-5z" stroke="currentColor" stroke-width="1.3"/><circle cx="8" cy="8" r="2" stroke="currentColor" stroke-width="1.3"/></svg>
+          </button>
+        </div>
+      </div>
+
+      <button class="btn btn-p" id="loginBtn" onclick="doLogin()">Entrar</button>
+      <a class="forgot-link" onclick="showPanel('panelForgot')">Esqueci minha senha</a>
+    </div>
+
+    <!-- PAINEL ESQUECI SENHA -->
+    <div class="panel" id="panelForgot">
+      <div class="back-link" onclick="showPanel('panelLogin')">
+        <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M9 2L4 7l5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+        Voltar
+      </div>
+      <div class="card-title">Recuperar senha</div>
+      <div class="card-sub">Enviaremos um link para redefinir sua senha</div>
+
+      <div class="alert alert-err" id="forgotErr"></div>
+      <div class="alert alert-ok" id="forgotOk"></div>
+
+      <div class="fg">
+        <label class="fl">Email</label>
+        <input class="fi" id="forgotEmail" type="email" placeholder="seu@email.com">
+      </div>
+      <button class="btn btn-p" id="forgotBtn" onclick="doForgot()">Enviar link de recuperação</button>
+    </div>
+
+    <!-- PAINEL DEFINIR SENHA (convite) -->
+    <div class="panel" id="panelSetPass">
+      <div class="invite-card">
+        Você foi convidado para o <strong>Prospect.</strong><br>
+        Defina sua senha para ativar o acesso.
+      </div>
+      <div class="card-title">Criar senha</div>
+      <div class="card-sub" id="inviteEmail"></div>
+
+      <div class="alert alert-err" id="setPassErr"></div>
+
+      <div class="fg">
+        <label class="fl">Nova senha</label>
+        <div class="pass-wrap">
+          <input class="fi" id="newPass" type="password" placeholder="Mínimo 8 caracteres" style="padding-right:44px">
+          <button class="pass-toggle" onclick="togglePass('newPass',this)" tabindex="-1">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M1 8s2.5-5 7-5 7 5 7 5-2.5 5-7 5-7-5-7-5z" stroke="currentColor" stroke-width="1.3"/><circle cx="8" cy="8" r="2" stroke="currentColor" stroke-width="1.3"/></svg>
+          </button>
+        </div>
+      </div>
+      <div class="fg">
+        <label class="fl">Confirmar senha</label>
+        <input class="fi" id="newPassConfirm" type="password" placeholder="Repita a senha">
+      </div>
+      <button class="btn btn-p" id="setPassBtn" onclick="doSetPass()">Ativar conta</button>
+    </div>
+
+  </div>
+</div>
+
+<script>
+const SB_URL = 'https://otiokqjhbvimjewzxegg.supabase.co';
+const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im90aW9rcWpoYnZpbWpld3p4ZWdnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY0MDAwODIsImV4cCI6MjA5MTk3NjA4Mn0.fRWwtVnbu-FcpsWf5gqU3vsBzsXuRSPZ79Q7-tvW-Kw';
+
+const sb = supabase.createClient(SB_URL, SB_KEY);
+
+// ── DETECTAR TIPO DE ACESSO ──────────────
+window.onload = async () => {
+  const hash = window.location.hash;
+
+  // Convite ou reset de senha — token na URL
+  if (hash.includes('type=invite') || hash.includes('type=recovery')) {
+    const params = new URLSearchParams(hash.replace('#','?'));
+    const type = params.get('type');
+    const accessToken = params.get('access_token');
+
+    if (accessToken) {
+      await sb.auth.setSession({
+        access_token: accessToken,
+        refresh_token: params.get('refresh_token') || ''
+      });
+    }
+
+    if (type === 'recovery' || type === 'invite') {
+      const { data: { user } } = await sb.auth.getUser();
+      if (user) {
+        document.getElementById('inviteEmail').textContent = user.email;
+        showPanel('panelSetPass');
+        return;
+      }
+    }
+  }
+
+  // Já logado — redirecionar
+  const { data: { session } } = await sb.auth.getSession();
+  if (session) {
+    await redirectUser(session.user);
+  }
+};
+
+async function redirectUser(user) {
+  // Verificar nível de acesso
+  const { data: profile } = await sb.from('user_profiles')
+    .select('role').eq('id', user.id).single();
+
+  const role = profile?.role || 'colaborador';
+  if (role === 'admin') {
+    window.location.href = 'app.html';
+  } else if (role === 'colaborador' || role === 'visualizador') {
+    window.location.href = 'app.html';
+  } else {
+    // Sem perfil ainda — aguardar aprovação
+    showErr('loginErr', 'Sua conta ainda não foi aprovada. Aguarde o administrador.');
+    await sb.auth.signOut();
+  }
+}
+
+// ── PAINÉIS ───────────────────────────────
+function showPanel(id) {
+  document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+  clearAlerts();
+}
+
+function clearAlerts() {
+  document.querySelectorAll('.alert').forEach(a => { a.classList.remove('show'); a.textContent = ''; });
+}
+
+function showErr(id, msg) {
+  const el = document.getElementById(id);
+  el.textContent = msg; el.classList.add('show');
+}
+
+function showOk(id, msg) {
+  const el = document.getElementById(id);
+  el.textContent = msg; el.classList.add('show');
+}
+
+function setLoading(btnId, loading) {
+  const btn = document.getElementById(btnId);
+  if (loading) {
+    btn.disabled = true;
+    btn.innerHTML = '<span class="loading-dot"></span><span class="loading-dot"></span><span class="loading-dot"></span>';
+  } else {
+    btn.disabled = false;
+  }
+}
+
+// ── LOGIN ─────────────────────────────────
+async function doLogin() {
+  const email = document.getElementById('loginEmail').value.trim();
+  const pass = document.getElementById('loginPass').value;
+  clearAlerts();
+
+  if (!email || !pass) { showErr('loginErr', 'Preencha email e senha.'); return; }
+
+  setLoading('loginBtn', true);
+  document.getElementById('loginBtn').innerHTML = '<span class="loading-dot"></span><span class="loading-dot"></span><span class="loading-dot"></span>';
+
+  const { data, error } = await sb.auth.signInWithPassword({ email, password: pass });
+
+  if (error) {
+    document.getElementById('loginBtn').textContent = 'Entrar';
+    document.getElementById('loginBtn').disabled = false;
+    const msg = error.message.includes('Invalid') ? 'Email ou senha incorretos.' :
+                error.message.includes('confirmed') ? 'Confirme seu email antes de entrar.' :
+                'Erro ao entrar. Tente novamente.';
+    showErr('loginErr', msg);
+    return;
+  }
+
+  await redirectUser(data.user);
+}
+
+// ── ESQUECI SENHA ─────────────────────────
+async function doForgot() {
+  const email = document.getElementById('forgotEmail').value.trim();
+  clearAlerts();
+  if (!email) { showErr('forgotErr', 'Digite seu email.'); return; }
+
+  document.getElementById('forgotBtn').disabled = true;
+  document.getElementById('forgotBtn').innerHTML = '<span class="loading-dot"></span><span class="loading-dot"></span><span class="loading-dot"></span>';
+
+  const { error } = await sb.auth.resetPasswordForEmail(email, {
+    redirectTo: window.location.origin + '/index.html'
+  });
+
+  document.getElementById('forgotBtn').textContent = 'Enviar link de recuperação';
+  document.getElementById('forgotBtn').disabled = false;
+
+  if (error) { showErr('forgotErr', 'Erro ao enviar. Verifique o email.'); return; }
+  showOk('forgotOk', '✓ Link enviado! Verifique sua caixa de entrada.');
+}
+
+// ── DEFINIR SENHA (convite/recovery) ──────
+async function doSetPass() {
+  const pass = document.getElementById('newPass').value;
+  const confirm = document.getElementById('newPassConfirm').value;
+  clearAlerts();
+
+  if (pass.length < 8) { showErr('setPassErr', 'A senha deve ter pelo menos 8 caracteres.'); return; }
+  if (pass !== confirm) { showErr('setPassErr', 'As senhas não coincidem.'); return; }
+
+  document.getElementById('setPassBtn').disabled = true;
+  document.getElementById('setPassBtn').innerHTML = '<span class="loading-dot"></span><span class="loading-dot"></span><span class="loading-dot"></span>';
+
+  const { data, error } = await sb.auth.updateUser({ password: pass });
+
+  if (error) {
+    document.getElementById('setPassBtn').textContent = 'Ativar conta';
+    document.getElementById('setPassBtn').disabled = false;
+    showErr('setPassErr', 'Erro ao definir senha. Tente novamente.');
+    return;
+  }
+
+  // Redirecionar após definir senha
+  await redirectUser(data.user);
+}
+
+// ── TOGGLE SENHA ──────────────────────────
+function togglePass(inputId, btn) {
+  const input = document.getElementById(inputId);
+  const isPass = input.type === 'password';
+  input.type = isPass ? 'text' : 'password';
+  btn.style.color = isPass ? 'var(--accent)' : 'var(--text-3)';
+}
+</script>
+</body>
+</html>

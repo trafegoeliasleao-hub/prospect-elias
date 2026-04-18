@@ -397,10 +397,15 @@ textarea.fc2{resize:none}
 @media(max-width:768px){
   .btn-menu-mobile{display:flex;align-items:center;justify-content:center;flex-shrink:0}
   .btn-label-desktop{display:none}
-  .sidebar-mobile-open .sidebar{display:flex;position:fixed;top:52px;left:0;bottom:0;width:280px;z-index:100;box-shadow:var(--sh-m)}
+  .sidebar{
+    position:fixed;top:52px;left:-280px;bottom:0;width:280px;z-index:100;
+    box-shadow:var(--sh-m);transition:left .25s cubic-bezier(.25,.46,.45,.94);
+    display:flex!important;
+  }
+  .sidebar-mobile-open .sidebar{left:0}
   .sidebar-mobile-open .sidebar-overlay{display:block}
 }
-.sidebar-overlay{display:none;position:fixed;inset:0;top:52px;background:rgba(0,0,0,.2);backdrop-filter:blur(2px);z-index:99}
+.sidebar-overlay{display:none;position:fixed;inset:0;top:52px;background:rgba(0,0,0,.25);backdrop-filter:blur(2px);z-index:99}
 
 /* BOTÃO FEITO — melhorado */
 .plan-feito-btn{
@@ -487,7 +492,29 @@ textarea.fc2{resize:none}
 .plan-empty{text-align:center;padding:48px;color:var(--text-3);font-size:13px}
 .plan-count{font-size:12px;color:var(--text-3);font-weight:500}
 .plan-filter-label{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--text-3)}
-/* CLIENTES ATIVOS */
+/* STATUS ATIVO */
+.c-ativo{background:rgba(13,94,46,.12);color:#0d5e2e}
+
+/* CLIENTES — toggle lista/cards */
+.view-toggle{display:flex;background:rgba(0,0,0,.06);border-radius:8px;padding:2px;gap:0}
+.view-toggle-btn{padding:4px 12px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;border:none;background:transparent;color:var(--text-2);font-family:inherit;transition:var(--t)}
+.view-toggle-btn.active{background:var(--white);color:var(--text);box-shadow:0 1px 3px rgba(0,0,0,.1)}
+
+/* CLIENTES — lista */
+.clientes-lista{display:flex;flex-direction:column;gap:0}
+.cliente-lista-row{display:flex;align-items:center;gap:12px;padding:13px 20px;border-bottom:1px solid var(--border);cursor:pointer;transition:var(--t);background:var(--glass)}
+.cliente-lista-row:first-child{border-radius:var(--r-l) var(--r-l) 0 0}
+.cliente-lista-row:last-child{border-bottom:none;border-radius:0 0 var(--r-l) var(--r-l)}
+.cliente-lista-row:hover{background:var(--accent-l)}
+.cliente-lista-score{width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;flex-shrink:0;border:2px solid}
+
+/* FU FILTROS RÁPIDOS */
+.fu-filtros{display:flex;gap:6px;align-items:center}
+.fu-filtro-btn{padding:5px 12px;border-radius:980px;font-size:11px;font-weight:700;cursor:pointer;border:1.5px solid var(--border-s);background:transparent;color:var(--text-2);font-family:inherit;transition:var(--t)}
+.fu-filtro-btn:hover{border-color:var(--accent);color:var(--accent)}
+.fu-filtro-btn.active{background:var(--accent);color:#fff;border-color:var(--accent)}
+.fu-filtro-btn.active-orange{background:var(--orange);color:#fff;border-color:var(--orange)}
+.fu-filtro-btn.active-red{background:var(--red);color:#fff;border-color:var(--red)}
 .clientes-wrap{padding:24px 32px;display:flex;flex-direction:column;gap:20px;max-width:1100px}
 .clientes-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:16px}
 .cliente-card{background:var(--glass);backdrop-filter:blur(14px);border:1px solid var(--glass-border);border-radius:var(--r-l);box-shadow:var(--sh);padding:20px;cursor:pointer;transition:var(--t);position:relative;overflow:hidden}
@@ -679,6 +706,7 @@ textarea.fc2{resize:none}
     <div class="top-stats" id="topStats"></div>
     <div class="top-right">
       <div class="save-ind" id="saveInd"><div class="save-ind-dot"></div>Salvo</div>
+      <div id="adminBtnWrap"></div>
       <button class="btn btn-g" onclick="openPlanilha()" style="font-size:12px">📋</button>
       <button class="btn btn-g" onclick="exportCSV()" style="font-size:12px">↓</button>
       <button class="btn btn-p" onclick="openModal()">
@@ -891,9 +919,13 @@ textarea.fc2{resize:none}
 <div class="plan-page" id="planPage">
   <div class="plan-topbar">
     <div class="plan-title">📋 Planilha de Leads</div>
-    <button class="plan-hoje-btn" id="planHojeBtn" onclick="toggleHoje()">⏰ Follow-ups de Hoje</button>
+    <div class="fu-filtros">
+      <button class="fu-filtro-btn" id="fuFiltroTodos" onclick="setFuFiltro('todos')">Todos</button>
+      <button class="fu-filtro-btn" id="fuFiltroHoje" onclick="setFuFiltro('hoje')">⏰ Hoje</button>
+      <button class="fu-filtro-btn" id="fuFiltro7d" onclick="setFuFiltro('7d')">📅 7 dias</button>
+    </div>
     <span class="plan-count" id="planCount"></span>
-    <button class="btn btn-g" style="font-size:12px" onclick="exportCSVFiltered()">↓ Exportar filtrados</button>
+    <button class="btn btn-g" style="font-size:12px" onclick="exportCSVFiltered()">↓ Exportar</button>
     <button class="btn btn-g" style="font-size:12px" onclick="closePlanilha()">✕ Fechar</button>
   </div>
   <div class="plan-filters">
@@ -1037,30 +1069,39 @@ const SB_URL = 'https://otiokqjhbvimjewzxegg.supabase.co';
 const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im90aW9rcWpoYnZpbWpld3p4ZWdnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY0MDAwODIsImV4cCI6MjA5MTk3NjA4Mn0.fRWwtVnbu-FcpsWf5gqU3vsBzsXuRSPZ79Q7-tvW-Kw';
 const TABLE = 'prospect_leads';
 
-const STATUSES = ['novo','contatado','proposta','fechado','perdido'];
-const SL = {novo:'Novo',contatado:'Contatado',proposta:'Proposta',fechado:'Fechado',perdido:'Perdido'};
-const SE = {novo:'🔵',contatado:'🟢',proposta:'🟡',fechado:'✅',perdido:'🔴'};
+const STATUSES = ['novo','contatado','proposta','fechado','ativo','perdido'];
+const SL = {novo:'Novo',contatado:'Contatado',proposta:'Proposta',fechado:'Fechado',ativo:'Ativo',perdido:'Perdido'};
+const SE = {novo:'🔵',contatado:'🟢',proposta:'🟡',fechado:'✅',ativo:'🤝',perdido:'🔴'};
 const CI = {WhatsApp:'📱',Instagram:'📸','Ligação':'📞',Email:'✉️'};
-const COLORS = {novo:'#007aff',contatado:'#34c759',proposta:'#ff9500',fechado:'#1e7a3a',perdido:'#ff3b30'};
+const COLORS = {novo:'#007aff',contatado:'#34c759',proposta:'#ff9500',fechado:'#1e7a3a',ativo:'#0d5e2e',perdido:'#ff3b30'};
 
 let sb, leads = [], curId = null, curFilter = 'todos', curST = 'primeiro_contato', scriptTxt = '';
 
 // ── INIT ──────────────────────────────────
+let currentUserRole = 'colaborador';
+
 window.onload = async () => {
   sb = supabase.createClient(SB_URL, SB_KEY);
 
-  // Verificar sessão ativa
   const { data: { session } } = await sb.auth.getSession();
-  if (!session) {
-    window.location.href = 'index.html';
-    return;
-  }
+  if (!session) { window.location.href = 'index.html'; return; }
 
   await Promise.all([loadLeads(), loadClientes(), loadFinanceiro()]);
 
-  // Atualizar last_seen
+  // Atualizar last_seen e verificar role
   sb.from('user_profiles').update({last_seen: new Date().toISOString()})
     .eq('id', session.user.id).then(()=>{});
+
+  const { data: profile } = await sb.from('user_profiles')
+    .select('role').eq('id', session.user.id).maybeSingle();
+  currentUserRole = profile?.role || 'colaborador';
+
+  // Mostrar botão admin se for admin
+  if (currentUserRole === 'admin') {
+    document.getElementById('adminBtnWrap').innerHTML =
+      `<a href="admin.html" class="btn btn-g" style="font-size:12px">⚙️ <span class="btn-label-desktop">Admin</span></a>`;
+  }
+
   document.getElementById('loadingScreen').style.display = 'none';
   document.getElementById('appRoot').style.display = 'grid';
   renderAll();
@@ -1143,7 +1184,7 @@ function renderFilters() {
     </div>`).join('');
 }
 
-function setFilter(f) { curFilter = f; renderFilters(); renderLeads(); }
+function setFilter(f) { curFilter = f; renderFilters(); renderLeads(); closeSidebarMobile(); }
 
 function renderLeads() {
   const q = document.getElementById('searchInput').value.toLowerCase();
@@ -1190,6 +1231,8 @@ function selectLead(id) {
   scriptTxt = getLead(id)?.script || '';
   renderLeads();
   renderDetail();
+  closeSidebarMobile();
+  switchView('detail', null);
 }
 
 function renderDetail() {
@@ -1540,20 +1583,22 @@ function openModal(id = null) {
   const l = id ? getLead(id) : null;
   document.getElementById('modalTitle').textContent = l ? 'Editar Lead' : 'Novo Lead';
 
+  // Popular nichos dinâmicos
+  const nichoSel = document.getElementById('f-niche');
+  nichoSel.innerHTML = getNichoOptions(l?.niche || '');
+
   if (l) {
     document.getElementById('f-name').value = l.name || '';
-    document.getElementById('f-niche').value = l.niche || '';
     document.getElementById('f-wa').value = l.whatsapp || '';
     document.getElementById('f-ig').value = l.instagram || '';
     document.getElementById('f-ch').value = l.channel || 'WhatsApp';
-    document.getElementById('f-or').value = l.origin || 'Instagram';
+    document.getElementById('f-or').value = l.origin || 'Prospecção Ativa Instagram';
     document.getElementById('f-ob').value = l.obs || '';
     document.getElementById('f-cnpj').value = l.cnpj || '';
   } else {
     ['f-name','f-wa','f-ig','f-ob','f-cnpj'].forEach(id => document.getElementById(id).value = '');
   }
   document.getElementById('dupAlert').classList.remove('show');
-
   document.getElementById('overlay').classList.add('open');
   setTimeout(() => document.getElementById('f-name').focus(), 100);
 }
@@ -1842,14 +1887,21 @@ function getPlanFiltered() {
 
 function renderPlanilha() {
   let list = getPlanFiltered();
+  const hoje = new Date(); hoje.setHours(0,0,0,0);
+  const em7 = new Date(hoje); em7.setDate(hoje.getDate()+7);
 
-  if (planHojeAtivo) {
-    const hoje = new Date(); hoje.setHours(0,0,0,0);
+  if (fuFiltroAtivo === 'hoje') {
     list = list.filter(l => {
       if (!l.followup) return false;
-      const d = new Date(l.followup + 'T12:00:00'); d.setHours(0,0,0,0);
+      const d = new Date(l.followup+'T12:00:00'); d.setHours(0,0,0,0);
       return d <= hoje;
-    }).sort((a,b) => new Date(a.followup) - new Date(b.followup));
+    }).sort((a,b) => new Date(a.followup)-new Date(b.followup));
+  } else if (fuFiltroAtivo === '7d') {
+    list = list.filter(l => {
+      if (!l.followup) return false;
+      const d = new Date(l.followup+'T12:00:00'); d.setHours(0,0,0,0);
+      return d <= em7;
+    }).sort((a,b) => new Date(a.followup)-new Date(b.followup));
   }
 
   document.getElementById('planCount').textContent = list.length + ' lead' + (list.length!==1?'s':'');
@@ -1865,16 +1917,16 @@ function renderPlanilha() {
           <td>${l.whatsapp ? `<a class="plan-link" href="https://wa.me/55${l.whatsapp.replace(/\D/g,'')}" target="_blank">${esc(l.whatsapp)}</a>` : '<span style="color:var(--text-3)">—</span>'}</td>
           <td>${l.instagram ? `<a class="plan-link" href="https://instagram.com/${l.instagram.replace('@','')}" target="_blank">${esc(l.instagram)}</a>` : '<span style="color:var(--text-3)">—</span>'}</td>
           <td>${CI[l.channel]||''} ${esc(l.channel)}</td>
-          <td>${l.adsAtivos==='sim' ? '<span class="plan-ads-yes">🔴 Sim</span>' : l.adsAtivos==='nao' ? '<span class="plan-ads-no">🟢 Não</span>' : '<span style="color:var(--text-3)">—</span>'}</td>
+          <td>${l.adsAtivos==='sim'?'<span class="plan-ads-yes">🔴 Sim</span>':l.adsAtivos==='nao'?'<span class="plan-ads-no">🟢 Não</span>':'<span style="color:var(--text-3)">—</span>'}</td>
           <td style="text-align:center">${l.adsCount||'—'}</td>
-          <td style="white-space:nowrap">${fuDate ? `<span style="font-size:12px;font-weight:600;color:${fuVencido?'var(--red)':fuHoje?'var(--orange)':'var(--accent)'}">${fuDate.toLocaleDateString('pt-BR')}${fuHoje?' · Hoje':fuVencido?' · Atrasado':''}</span>` : '<span style="color:var(--text-3)">—</span>'}</td>
-          <td>${l.followup ? `<button class="plan-feito-btn" onclick="marcarFuFeito('${l.id}')">✓ Feito</button>` : '<span style="color:var(--text-3)">—</span>'}</td>
+          <td style="white-space:nowrap">${fuDate?`<span style="font-size:12px;font-weight:600;color:${fuVencido?'var(--red)':fuHoje?'var(--orange)':'var(--accent)'}">${fuDate.toLocaleDateString('pt-BR')}${fuHoje?' · Hoje':fuVencido?' · Atrasado':''}</span>`:'<span style="color:var(--text-3)">—</span>'}</td>
+          <td>${l.followup?`<button class="plan-feito-btn" onclick="marcarFuFeito('${l.id}')">✓ Feito</button>`:'<span style="color:var(--text-3)">—</span>'}</td>
           <td style="text-align:center">${l.contacts.length}</td>
           <td style="white-space:nowrap;color:var(--text-3);font-size:12px">${new Date(l.createdAt).toLocaleDateString('pt-BR')}</td>
           <td><button class="plan-row-btn" onclick="closePlanilha();selectLead('${l.id}');switchView('detail',null)">→</button></td>
         </tr>`;
       }).join('')
-    : `<tr><td colspan="13" class="plan-empty">${planHojeAtivo ? '🎉 Nenhum follow-up pendente para hoje!' : 'Nenhum lead com esses filtros'}</td></tr>`;
+    : `<tr><td colspan="13" class="plan-empty">${fuFiltroAtivo!=='todos'?'🎉 Nenhum follow-up pendente nesse período!':'Nenhum lead com esses filtros'}</td></tr>`;
 }
 
 function exportCSVFiltered() {
@@ -2081,30 +2133,28 @@ async function marcarFuFeito(leadId) {
     isFu: true
   });
 
-  // remover follow-up atual temporariamente
+  // remover follow-up atual
   l.followup = null;
-
   await persistLead(l);
   renderAll(); renderDetail(); renderSbHoje();
-  if (planHojeAtivo) renderPlanilha();
-  closeMiniModal();
+  renderPlanilha();
 
-  // Perguntar se quer agendar próximo
+  // Mostrar popup IMEDIATAMENTE
   if (temProx) {
     const proxDias = FU_SEQ[proxIdx];
     showMiniModal(
       '✅ Follow-up concluído!',
-      `Deseja agendar o próximo follow-up? D+${proxDias} (${calcDataFu(proxDias)})`,
+      `Deseja agendar o próximo follow-up?\nD+${proxDias} · ${calcDataFu(proxDias)}`,
       [
-        { label: `📅 Sim, agendar D+${proxDias}`, cls: 'btn-p', fn: async () => {
+        { label: `📅 Agendar D+${proxDias}`, cls: 'btn-p', fn: async () => {
           agendarFuSeq(l, proxIdx);
           l.followupSeq = proxIdx;
           await persistLead(l);
-          renderAll(); renderDetail(); renderSbHoje();
+          renderAll(); renderDetail(); renderSbHoje(); renderPlanilha();
           closeMiniModal();
           toast(`📅 Follow-up D+${proxDias} agendado!`);
         }},
-        { label: 'Não, deixar sem agendamento', cls: 'btn-g', fn: closeMiniModal }
+        { label: 'Não agendar agora', cls: 'btn-g', fn: closeMiniModal }
       ]
     );
   } else {
@@ -2362,6 +2412,8 @@ function fmtMoeda(v) {
   return v != null ? 'R$ ' + Number(v).toLocaleString('pt-BR', {minimumFractionDigits:2}) : '—';
 }
 
+let clientesViewMode = 'cards';
+
 function renderClientes() {
   const wrap = document.getElementById('clientesWrap');
   const hoje = new Date(); hoje.setHours(0,0,0,0);
@@ -2373,48 +2425,75 @@ function renderClientes() {
           <div style="font-size:22px;font-weight:700;letter-spacing:-.4px">Clientes Ativos</div>
           <div style="font-size:13px;color:var(--text-2);margin-top:2px">${clientes.filter(c=>c.status_contrato==='ativo').length} contratos ativos</div>
         </div>
-        <button class="btn btn-p" onclick="openClienteModal()">+ Novo Cliente</button>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <div class="view-toggle">
+            <button class="view-toggle-btn ${clientesViewMode==='cards'?'active':''}" onclick="clientesViewMode='cards';renderClientes()">⊞ Cards</button>
+            <button class="view-toggle-btn ${clientesViewMode==='lista'?'active':''}" onclick="clientesViewMode='lista';renderClientes()">☰ Lista</button>
+          </div>
+          <button class="btn btn-p" onclick="openClienteModal()">+ Novo Cliente</button>
+        </div>
       </div>
       ${!clientes.length
         ? `<div class="empty-s" style="height:260px"><div class="es-icon">🤝</div><div class="es-title">Nenhum cliente ativo ainda</div><div class="es-sub">Clique em "+ Novo Cliente" para adicionar<br>ou converta um lead fechado em cliente</div></div>`
-        : `<div class="clientes-grid">
-          ${clientes.map(c => {
-            const saude = c.saude_cliente?.[0];
-            const score = saude?.score ?? 100;
-            const sc = scoreColor(score);
-            const venc = c.data_vencimento ? new Date(c.data_vencimento+'T12:00:00') : null;
-            const diasVenc = venc ? Math.ceil((venc-hoje)/(1000*60*60*24)) : null;
-            return `
-              <div class="cliente-card ${c.status_pagamento}" onclick="openClienteDetalhe('${c.id}')">
-                <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px">
-                  <div style="flex:1;min-width:0">
-                    <div class="cliente-name">${esc(c.name)}</div>
-                    <div class="cliente-niche">${esc(c.niche||'')}${c.origem_lead?` · via ${esc(c.origem_lead)}`:''}</div>
-                  </div>
-                  <div class="score-circle score-${sc}" title="Score de saúde">${score}</div>
-                </div>
-                <div class="cliente-row">
-                  <span class="cliente-label">Contrato</span>
-                  <span class="cliente-val">${fmtMoeda(c.valor_contrato)}/mês</span>
-                </div>
-                <div class="cliente-row">
-                  <span class="cliente-label">Vencimento</span>
-                  <span class="cliente-val" style="color:${diasVenc!=null&&diasVenc<=5?'var(--red)':diasVenc!=null&&diasVenc<=10?'var(--orange)':'var(--text)'}">
-                    ${venc ? venc.toLocaleDateString('pt-BR') : '—'}
-                    ${diasVenc!=null?(diasVenc<0?` · <strong style="color:var(--red)">${Math.abs(diasVenc)}d atrasado</strong>`:diasVenc===0?' · <strong style="color:var(--orange)">Hoje</strong>':diasVenc<=5?` · ${diasVenc}d`:''):''}
-                  </span>
-                </div>
-                <div class="cliente-badges">
-                  <span class="pag-badge pag-${c.status_pagamento}">${c.status_pagamento==='em_dia'?'✓ Em dia':c.status_pagamento==='atrasado'?'⚠ Atrasado':c.status_pagamento==='trial'?'Trial':'Cancelado'}</span>
-                  <span class="contrato-badge">${c.status_contrato==='ativo'?'Ativo':c.status_contrato==='pausado'?'Pausado':'Encerrado'}</span>
-                  ${saude?.status_campanhas==='problema'?'<span class="pag-badge pag-atrasado">⚠ Campanhas</span>':''}
-                  ${saude?.dias_sem_contato>=14?`<span class="pag-badge" style="background:rgba(174,174,178,.15);color:var(--text-3)">${saude.dias_sem_contato}d sem contato</span>`:''}
-                  ${c.plataformas?.length?`<span class="pag-badge" style="background:rgba(0,113,227,.08);color:var(--accent)">${c.plataformas.join(' · ')}</span>`:''}
-                </div>
-              </div>`;
-          }).join('')}
-        </div>`}
+        : clientesViewMode==='lista'
+          ? renderClientesLista(clientes, hoje)
+          : renderClientesCards(clientes, hoje)}
     </div>`;
+}
+
+function renderClientesCards(list, hoje) {
+  return `<div class="clientes-grid">${list.map(c => {
+    const saude = c.saude_cliente?.[0];
+    const score = saude?.score ?? 100;
+    const sc = scoreColor(score);
+    const venc = c.data_vencimento ? new Date(c.data_vencimento+'T12:00:00') : null;
+    const diasVenc = venc ? Math.ceil((venc-hoje)/(1000*60*60*24)) : null;
+    return `<div class="cliente-card ${c.status_pagamento}" onclick="openClienteDetalhe('${c.id}')">
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px">
+        <div style="flex:1;min-width:0">
+          <div class="cliente-name">${esc(c.name)}</div>
+          <div class="cliente-niche">${esc(c.niche||'')}${c.origem_lead?` · via ${esc(c.origem_lead)}`:''}</div>
+        </div>
+        <div class="score-circle score-${sc}">${score}</div>
+      </div>
+      <div class="cliente-row"><span class="cliente-label">Contrato</span><span class="cliente-val">${fmtMoeda(c.valor_contrato)}/mês</span></div>
+      <div class="cliente-row">
+        <span class="cliente-label">Vencimento</span>
+        <span class="cliente-val" style="color:${diasVenc!=null&&diasVenc<=5?'var(--red)':diasVenc!=null&&diasVenc<=10?'var(--orange)':'var(--text)'}">
+          ${venc?venc.toLocaleDateString('pt-BR'):'—'}
+          ${diasVenc!=null?(diasVenc<0?` · <strong style="color:var(--red)">${Math.abs(diasVenc)}d atrasado</strong>`:diasVenc===0?' · <strong style="color:var(--orange)">Hoje</strong>':diasVenc<=5?` · ${diasVenc}d`:''):''}
+        </span>
+      </div>
+      <div class="cliente-badges">
+        <span class="pag-badge pag-${c.status_pagamento}">${c.status_pagamento==='em_dia'?'✓ Em dia':c.status_pagamento==='atrasado'?'⚠ Atrasado':c.status_pagamento==='trial'?'Trial':'Cancelado'}</span>
+        <span class="contrato-badge">${c.status_contrato==='ativo'?'Ativo':c.status_contrato==='pausado'?'Pausado':'Encerrado'}</span>
+        ${saude?.status_campanhas==='problema'?'<span class="pag-badge pag-atrasado">⚠ Campanhas</span>':''}
+        ${saude?.dias_sem_contato>=14?`<span class="pag-badge" style="background:rgba(174,174,178,.15);color:var(--text-3)">${saude.dias_sem_contato}d sem contato</span>`:''}
+      </div>
+    </div>`;
+  }).join('')}</div>`;
+}
+
+function renderClientesLista(list, hoje) {
+  return `<div class="card clientes-lista">${list.map(c => {
+    const saude = c.saude_cliente?.[0];
+    const score = saude?.score ?? 100;
+    const sc = scoreColor(score);
+    const venc = c.data_vencimento ? new Date(c.data_vencimento+'T12:00:00') : null;
+    const diasVenc = venc ? Math.ceil((venc-hoje)/(1000*60*60*24)) : null;
+    return `<div class="cliente-lista-row" onclick="openClienteDetalhe('${c.id}')">
+      <div class="cliente-lista-score score-${sc}">${score}</div>
+      <div style="flex:1;min-width:0">
+        <div style="font-weight:600;font-size:13px">${esc(c.name)}</div>
+        <div style="font-size:11px;color:var(--text-3)">${esc(c.niche||'')}${c.origem_lead?` · ${esc(c.origem_lead)}`:''}</div>
+      </div>
+      <div style="font-size:13px;font-weight:700;min-width:100px;text-align:right">${fmtMoeda(c.valor_contrato)}</div>
+      <span class="pag-badge pag-${c.status_pagamento}">${c.status_pagamento==='em_dia'?'✓ Em dia':c.status_pagamento==='atrasado'?'⚠ Atrasado':c.status_pagamento==='trial'?'Trial':'Cancelado'}</span>
+      <div style="font-size:12px;color:${diasVenc!=null&&diasVenc<=5?'var(--red)':diasVenc!=null&&diasVenc<=10?'var(--orange)':'var(--text-3)'};min-width:80px;text-align:right">
+        ${venc?venc.toLocaleDateString('pt-BR'):'—'}${diasVenc!=null&&diasVenc<0?' ⚠':''}
+      </div>
+    </div>`;
+  }).join('')}</div>`;
 }
 
 function openClienteDetalhe(id) {
@@ -2750,9 +2829,28 @@ async function saveClienteConvertido(leadId) {
   };
   if (!payload.name) { toast('Nome é obrigatório'); return; }
   await sb.from('clientes_ativos').insert(payload);
+
+  // Atualizar status do lead para "ativo"
+  const l = getLead(leadId);
+  if (l) { l.status = 'ativo'; await persistLead(l); }
+
   document.getElementById('clienteOverlay')?.remove();
   await loadClientes();
+  renderAll();
   toast('🎉 Lead convertido em cliente!');
+}
+
+// Nicho dinâmico — busca nichos únicos dos clientes e mescla com lista fixa
+function getNichosDisponiveis() {
+  const fixos = ['Concessionária de Motos','Delivery / Restaurante','Ecommerce','Saúde / Clínicas','Educação / Cursos','Imóveis','Outro'];
+  const dosClientes = clientes.map(c => c.niche).filter(Boolean);
+  return [...new Set([...fixos, ...dosClientes])].sort();
+}
+
+function getNichoOptions(selected = '') {
+  return getNichosDisponiveis().map(n =>
+    `<option value="${esc(n)}" ${selected===n?'selected':''}>${esc(n)}</option>`
+  ).join('');
 }
 
 async function deleteCliente(id) {
@@ -2765,15 +2863,18 @@ async function deleteCliente(id) {
 }
 
 // ── FINANCEIRO ────────────────────────────
-let finCustos = [], finMeses = [];
+let finCustos = [], finMeses = [], finPagamentos = [];
+const mesAtualFin = new Date().toISOString().slice(0,7);
 
 async function loadFinanceiro() {
-  const [rc, rm] = await Promise.all([
+  const [rc, rm, rp] = await Promise.all([
     sb.from('financeiro_custos').select('*').order('categoria'),
-    sb.from('financeiro_meses').select('*').order('mes', {ascending:false}).limit(12)
+    sb.from('financeiro_meses').select('*').order('mes', {ascending:false}).limit(12),
+    sb.from('financeiro_pagamentos_custos').select('*').eq('mes', mesAtualFin)
   ]);
   finCustos = rc.data || [];
   finMeses = rm.data || [];
+  finPagamentos = rp.data || [];
 }
 
 function renderFinanceiro() {
@@ -2782,14 +2883,18 @@ function renderFinanceiro() {
   const totalReceita = clientes.filter(c=>c.status_contrato==='ativo'&&c.status_pagamento!=='cancelado')
     .reduce((s,c)=>s+Number(c.valor_contrato||0),0);
   const lucro = totalReceita - totalCustos;
-  const mesAtual = new Date().toISOString().slice(0,7);
+
+  // Custos pagos este mês
+  const custosPagos = finPagamentos.reduce((s,p)=>s+Number(p.valor_pago||0),0);
+  const custosPendentes = totalCustos - custosPagos;
+  const caixaAtual = totalReceita - custosPagos;
 
   wrap.innerHTML = `
     <div class="fin-wrap">
       <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px">
         <div>
           <div style="font-size:22px;font-weight:700;letter-spacing:-.4px">Financeiro</div>
-          <div style="font-size:13px;color:var(--text-2);margin-top:2px">Visão geral · ${new Date().toLocaleDateString('pt-BR',{month:'long',year:'numeric'})}</div>
+          <div style="font-size:13px;color:var(--text-2);margin-top:2px">${new Date().toLocaleDateString('pt-BR',{month:'long',year:'numeric'})}</div>
         </div>
       </div>
 
@@ -2803,39 +2908,60 @@ function renderFinanceiro() {
         <div class="fin-card fin-card-vermelho">
           <div class="fin-card-label">Custos fixos</div>
           <div class="fin-card-val" style="color:var(--red)">${fmtMoeda(totalCustos)}</div>
-          <div class="fin-card-sub">${finCustos.filter(c=>c.ativo).length} itens ativos</div>
+          <div class="fin-card-sub">Pago: ${fmtMoeda(custosPagos)} · Pendente: ${fmtMoeda(custosPendentes)}</div>
+        </div>
+        <div class="fin-card ${caixaAtual>=0?'fin-card-azul':'fin-card-vermelho'}">
+          <div class="fin-card-label">💰 Caixa atual</div>
+          <div class="fin-card-val" style="color:${caixaAtual>=0?'var(--accent)':'var(--red)'}">${fmtMoeda(caixaAtual)}</div>
+          <div class="fin-card-sub">Receita − custos pagos</div>
         </div>
         <div class="fin-card ${lucro>=0?'fin-card-verde':'fin-card-vermelho'}">
           <div class="fin-card-label">Lucro estimado</div>
           <div class="fin-card-val" style="color:${lucro>=0?'var(--green)':'var(--red)'}">${fmtMoeda(lucro)}</div>
-          <div class="fin-card-sub">margem ${totalReceita?Math.round(lucro/totalReceita*100):0}%</div>
-        </div>
-        <div class="fin-card fin-card-laranja">
-          <div class="fin-card-label">Projeção anual</div>
-          <div class="fin-card-val" style="color:var(--orange)">${fmtMoeda(lucro*12)}</div>
-          <div class="fin-card-sub">baseado no mês atual</div>
+          <div class="fin-card-sub">margem ${totalReceita?Math.round(lucro/totalReceita*100):0}% · projeção anual ${fmtMoeda(lucro*12)}</div>
         </div>
       </div>
 
       <!-- CUSTOS FIXOS -->
       <div class="card">
         <div class="ch">
-          <div class="ct"><span class="ct-i">📌</span> Custos Fixos</div>
-          <button class="btn btn-p btn-sm" onclick="openCustoModal()">+ Adicionar</button>
+          <div class="ct"><span class="ct-i">📌</span> Custos Fixos — ${new Date().toLocaleDateString('pt-BR',{month:'long'})}</div>
+          <div style="display:flex;gap:8px;align-items:center">
+            <span style="font-size:12px;color:var(--text-3)">${finPagamentos.length}/${finCustos.filter(c=>c.ativo).length} pagos</span>
+            <button class="btn btn-p btn-sm" onclick="openCustoModal()">+ Adicionar</button>
+          </div>
+        </div>
+        <!-- Barra de progresso pagamentos -->
+        <div style="padding:12px 20px 0;display:flex;flex-direction:column;gap:6px">
+          <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text-3);font-weight:600">
+            <span>PAGO ${fmtMoeda(custosPagos)}</span>
+            <span>TOTAL ${fmtMoeda(totalCustos)}</span>
+          </div>
+          <div style="height:6px;background:rgba(0,0,0,.06);border-radius:3px;overflow:hidden">
+            <div style="height:100%;background:var(--green);border-radius:3px;width:${totalCustos?Math.min(100,Math.round(custosPagos/totalCustos*100)):0}%;transition:width .5s ease"></div>
+          </div>
         </div>
         <div id="custosLista">
-          ${finCustos.length ? finCustos.map(c=>`
+          ${finCustos.length ? finCustos.map(c => {
+            const pag = finPagamentos.find(p => p.custo_id === c.id);
+            const pago = !!pag;
+            return `
             <div class="custo-row ${!c.ativo?'custo-inactive':''}">
-              <div>
-                <div class="custo-nome">${esc(c.nome)}</div>
-                <div class="custo-cat">${c.categoria} ${!c.ativo?'· inativo':''}</div>
+              <div style="display:flex;align-items:center;gap:8px;flex:1;min-width:0">
+                <div style="width:20px;height:20px;border-radius:50%;border:2px solid ${pago?'var(--green)':'var(--border-s)'};background:${pago?'var(--green)':'transparent'};display:flex;align-items:center;justify-content:center;flex-shrink:0;cursor:${c.ativo?'pointer':'default'}" onclick="${c.ativo?`togglePagoCusto('${c.id}',${pago})`:''}">
+                  ${pago?'<svg width="10" height="8" viewBox="0 0 10 8" fill="none"><path d="M1 4l3 3 5-6" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/></svg>':''}
+                </div>
+                <div>
+                  <div class="custo-nome" style="${pago?'text-decoration:line-through;color:var(--text-3)':''}">${esc(c.nome)}</div>
+                  <div class="custo-cat">${c.categoria}${pago&&pag.data_pagamento?` · pago em ${new Date(pag.data_pagamento+'T12:00:00').toLocaleDateString('pt-BR')}`:!c.ativo?' · inativo':''}</div>
+                </div>
               </div>
-              <div class="custo-val">${fmtMoeda(c.valor)}</div>
-              <div style="display:flex;gap:6px">
+              <div class="custo-val" style="${pago?'color:var(--green)':''}">${fmtMoeda(c.valor)}</div>
+              <div style="display:flex;gap:4px">
+                ${c.ativo&&!pago?`<button class="btn btn-p btn-sm" onclick="marcarCustoPago('${c.id}','${c.valor}')">✓ Pago</button>`:''}
                 <button class="btn btn-g btn-sm" onclick="openCustoModal('${c.id}')">✏️</button>
-                <button class="btn btn-g btn-sm" onclick="toggleCusto('${c.id}',${!c.ativo})">${c.ativo?'Desativar':'Ativar'}</button>
               </div>
-            </div>`).join('')
+            </div>`}).join('')
             : '<div class="h-emp">Nenhum custo cadastrado</div>'}
         </div>
       </div>
@@ -2870,6 +2996,58 @@ function renderFinanceiro() {
         </div>
       </div>
     </div>`;
+}
+
+async function marcarCustoPago(custoId, valor) {
+  // Abrir mini modal para data de pagamento
+  showMiniModal(
+    '✓ Marcar como pago',
+    'Confirme a data de pagamento:',
+    []
+  );
+  // Adicionar input de data no modal
+  const sub = document.getElementById('fuMiniSub');
+  sub.innerHTML = `
+    <div style="margin-top:10px">
+      <input type="date" id="dataPagInput" value="${new Date().toISOString().split('T')[0]}"
+        style="background:rgba(0,0,0,.04);border:1.5px solid var(--border-s);border-radius:8px;padding:8px 12px;font-family:inherit;font-size:13px;width:100%;outline:none">
+    </div>`;
+  document.getElementById('fuMiniBtns').innerHTML = '';
+  const btns = [
+    { label: '✓ Confirmar', cls: 'btn-p', fn: async () => {
+      const data = document.getElementById('dataPagInput')?.value || new Date().toISOString().split('T')[0];
+      await sb.from('financeiro_pagamentos_custos').upsert({
+        custo_id: custoId, mes: mesAtualFin,
+        valor_pago: parseFloat(valor)||0,
+        data_pagamento: data
+      }, {onConflict:'custo_id,mes'});
+      closeMiniModal();
+      await loadFinanceiro();
+      renderFinanceiro();
+      toast('✓ Custo marcado como pago');
+    }},
+    { label: 'Cancelar', cls: 'btn-g', fn: closeMiniModal }
+  ];
+  btns.forEach(b => {
+    const el = document.createElement('button');
+    el.className = 'btn ' + b.cls;
+    el.textContent = b.label;
+    el.onclick = b.fn;
+    document.getElementById('fuMiniBtns').appendChild(el);
+  });
+}
+
+async function togglePagoCusto(custoId, estaPago) {
+  if (estaPago) {
+    await sb.from('financeiro_pagamentos_custos')
+      .delete().eq('custo_id', custoId).eq('mes', mesAtualFin);
+    await loadFinanceiro();
+    renderFinanceiro();
+    toast('Pagamento removido');
+  } else {
+    const custo = finCustos.find(c=>c.id===custoId);
+    if (custo) marcarCustoPago(custoId, custo.valor);
+  }
 }
 
 function openCustoModal(id = null) {
@@ -2994,9 +3172,30 @@ function switchView(v, btn) {
   if (v==='financeiro') renderFinanceiro();
 }
 
+// ── FU FILTROS ────────────────────────────
+let fuFiltroAtivo = 'todos';
+
+function setFuFiltro(filtro) {
+  fuFiltroAtivo = filtro;
+  document.querySelectorAll('.fu-filtro-btn').forEach(b => {
+    b.classList.remove('active','active-orange','active-red');
+  });
+  const btn = document.getElementById('fuFiltro' + (filtro==='todos'?'Todos':filtro==='hoje'?'Hoje':'7d'));
+  if (btn) {
+    if (filtro==='hoje') btn.classList.add('active-orange');
+    else if (filtro==='7d') btn.classList.add('active');
+    else btn.classList.add('active');
+  }
+  renderPlanilha();
+}
+
 // ── MOBILE SIDEBAR ────────────────────────
 function toggleSidebarMobile() {
   document.getElementById('appRoot').classList.toggle('sidebar-mobile-open');
+}
+
+function closeSidebarMobile() {
+  document.getElementById('appRoot').classList.remove('sidebar-mobile-open');
 }
 
 // ── TOAST ─────────────────────────────────

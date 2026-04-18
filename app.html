@@ -2603,6 +2603,7 @@ function renderClienteDetalhe() {
           <div class="ic"><div class="il">Início</div><div class="iv">${c.data_inicio?new Date(c.data_inicio+'T12:00:00').toLocaleDateString('pt-BR'):'—'}</div></div>
           <div class="ic"><div class="il">Vencimento</div><div class="iv">${c.data_vencimento?new Date(c.data_vencimento+'T12:00:00').toLocaleDateString('pt-BR'):'—'}</div></div>
           <div class="ic"><div class="il">Pagamento</div><div class="iv"><span class="pag-badge pag-${c.status_pagamento}">${c.status_pagamento==='em_dia'?'✓ Em dia':c.status_pagamento==='atrasado'?'⚠ Atrasado':'Trial'}</span></div></div>
+          <div class="ic"><div class="il">Dia de cobrança</div><div class="iv">${c.dia_vencimento?`Todo dia <strong>${c.dia_vencimento}</strong>`:'—'}</div></div>
           <div class="ic"><div class="il">Orçamento ads</div><div class="iv">${fmtMoeda(c.orcamento_mensal)}</div></div>
           <div class="ic"><div class="il">Contato</div><div class="iv">${c.whatsapp?`<a href="https://wa.me/55${c.whatsapp.replace(/\D/g,'')}" target="_blank" class="iv a">📱 ${esc(c.whatsapp)}</a>`:'—'}</div></div>
         </div>
@@ -2665,9 +2666,10 @@ function openClienteModal(id = null) {
       </div>
       <div class="fr">
         <div class="fg"><label class="fl">Data início</label><input class="fc2" id="cl-ini" type="date" value="${c?.data_inicio||''}"></div>
-        <div class="fg"><label class="fl">Data vencimento</label><input class="fc2" id="cl-venc" type="date" value="${c?.data_vencimento||''}"></div>
+        <div class="fg"><label class="fl">Data vencimento contrato</label><input class="fc2" id="cl-venc" type="date" value="${c?.data_vencimento||''}"></div>
       </div>
       <div class="fr">
+        <div class="fg"><label class="fl">Dia de cobrança (todo mês)</label><input class="fc2" id="cl-dia-venc" type="number" min="1" max="31" value="${c?.dia_vencimento||''}" placeholder="Ex: 5"></div>
         <div class="fg"><label class="fl">Status pagamento</label>
           <select class="fc2" id="cl-pag">
             <option value="em_dia" ${c?.status_pagamento==='em_dia'?'selected':''}>Em dia</option>
@@ -2727,6 +2729,7 @@ async function saveCliente() {
     orcamento_mensal: parseFloat(document.getElementById('cl-orc').value)||null,
     data_inicio: document.getElementById('cl-ini').value||null,
     data_vencimento: document.getElementById('cl-venc').value||null,
+    dia_vencimento: parseInt(document.getElementById('cl-dia-venc')?.value)||null,
     status_pagamento: document.getElementById('cl-pag').value,
     status_contrato: document.getElementById('cl-cont').value,
     objetivo: document.getElementById('cl-obj').value.trim(),
@@ -3021,14 +3024,20 @@ async function navegarMes(dir) {
 
   renderFinanceiro();
 
-  // Sugerir cópia se mês futuro/atual sem dados
-  const semFixos = finPagamentos.length === 0 && mesVizualizado >= mesAtualFin;
-  const semVariaveis = finVariaveis.length === 0 && mesVizualizado >= mesAtualFin;
+  // Só sugerir cópia ao avançar (dir > 0) e somente se o mês destino não tiver dados
+  if (dir <= 0) return;
 
-  if (semFixos && finCustos.length > 0 && dir > 0) {
-    setTimeout(() => sugerirCopiarCustos(mesAnterior), 150);
-  } else if (semVariaveis && dir > 0) {
-    // Buscar variáveis do mês anterior para sugerir
+  const jaTenFixos = finPagamentos.length > 0;
+  const jaTenVariaveis = finVariaveis.length > 0;
+
+  if (!jaTenFixos && finCustos.length > 0) {
+    // Verificar se tem variáveis no mês anterior para sugerir depois
+    const { data: varAnt } = await sb.from('financeiro_variaveis')
+      .select('*').eq('mes', mesAnterior);
+    setTimeout(() => {
+      sugerirCopiarCustos(mesAnterior, !jaTenVariaveis ? varAnt : null);
+    }, 150);
+  } else if (!jaTenVariaveis) {
     const { data: varAnt } = await sb.from('financeiro_variaveis')
       .select('*').eq('mes', mesAnterior);
     if (varAnt?.length > 0) {
@@ -3037,19 +3046,20 @@ async function navegarMes(dir) {
   }
 }
 
-function sugerirCopiarCustos(mesAnt) {
+function sugerirCopiarCustos(mesAnt, varAnt) {
   showMiniModal(
-    `📋 Copiar custos de ${getMesLabel(mesAnt)}?`,
-    `Encontramos ${finCustos.filter(c=>c.ativo).length} custo(s) fixo(s) cadastrado(s). Deseja usá-los como base para ${getMesLabel(mesVizualizado)}? Você poderá editar datas e valores individualmente depois.`,
+    `📋 Novo mês — ${getMesLabel(mesVizualizado)}`,
+    `Encontramos ${finCustos.filter(c=>c.ativo).length} custo(s) fixo(s) cadastrado(s). Eles já estão disponíveis para marcar como pago. Deseja também ver as contas variáveis de ${getMesLabel(mesAnt)}?`,
     [
-      { label: '✓ Sim, usar como base', cls: 'btn-p', fn: async () => {
+      { label: '✓ Ver variáveis também', cls: 'btn-p', fn: async () => {
         closeMiniModal();
-        toast('✓ Custos disponíveis — marque como pago conforme forem pagos');
-        // Verificar variáveis do mês anterior também
-        const { data: varAnt } = await sb.from('financeiro_variaveis').select('*').eq('mes', mesAnt);
-        if (varAnt?.length > 0) setTimeout(() => sugerirCopiarVariaveis(mesAnt, varAnt), 300);
+        if (varAnt?.length > 0) {
+          setTimeout(() => sugerirCopiarVariaveis(mesAnt, varAnt), 200);
+        } else {
+          toast(`✓ Custos de ${getMesLabel(mesVizualizado)} prontos`);
+        }
       }},
-      { label: '✕ Agora não', cls: 'btn-g', fn: closeMiniModal }
+      { label: '✕ Não agora', cls: 'btn-g', fn: closeMiniModal }
     ]
   );
 }
@@ -3210,7 +3220,7 @@ function renderFinanceiro() {
                 </div>
                 <div>
                   <div class="custo-nome" style="${pago?'text-decoration:line-through;color:var(--text-3)':''}">${esc(c.nome)}</div>
-                  <div class="custo-cat">${c.categoria}${pago&&pag.data_pagamento?` · pago em ${new Date(pag.data_pagamento+'T12:00:00').toLocaleDateString('pt-BR')}`:!c.ativo?' · inativo':' · clique para marcar pago'}</div>
+                  <div class="custo-cat">${c.categoria}${c.dia_vencimento?` · vence dia ${c.dia_vencimento}`:''}${pago&&pag.data_pagamento?` · pago em ${new Date(pag.data_pagamento+'T12:00:00').toLocaleDateString('pt-BR')}`:!c.ativo?' · inativo':pago?'':' · clique para marcar pago'}</div>
                 </div>
               </div>
               <div class="custo-val" style="${pago?'color:var(--green)':''}">${fmtMoeda(c.valor)}</div>
@@ -3327,11 +3337,62 @@ async function editarCaixa() {
   });
 }
 
+async function marcarCustoPago(custoId, valor) {
+  const custo = finCustos.find(c=>c.id===custoId);
+  // Calcular data de vencimento padrão baseada no dia_vencimento do custo
+  const hoje = new Date();
+  let vencDefault = '';
+  if (custo?.dia_vencimento) {
+    const d = new Date(hoje.getFullYear(), hoje.getMonth(), custo.dia_vencimento);
+    vencDefault = d.toISOString().split('T')[0];
+  }
+
+  showMiniModal('✓ Registrar pagamento', '', []);
+  document.getElementById('fuMiniSub').innerHTML = `
+    <div style="display:flex;flex-direction:column;gap:10px;margin-top:4px">
+      <div>
+        <label style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--text-3);display:block;margin-bottom:4px">Data de vencimento</label>
+        <input type="date" id="dataVencInput" value="${vencDefault}"
+          style="width:100%;background:rgba(0,0,0,.04);border:1.5px solid var(--border-s);border-radius:8px;padding:9px 12px;font-family:inherit;font-size:13px;outline:none">
+      </div>
+      <div>
+        <label style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--text-3);display:block;margin-bottom:4px">Data de pagamento</label>
+        <input type="date" id="dataPagInput" value="${new Date().toISOString().split('T')[0]}"
+          style="width:100%;background:rgba(0,0,0,.04);border:1.5px solid var(--border-s);border-radius:8px;padding:9px 12px;font-family:inherit;font-size:13px;outline:none">
+      </div>
+    </div>`;
+  document.getElementById('fuMiniBtns').innerHTML = '';
+  [
+    { label: '✓ Confirmar', cls: 'btn-p', fn: async () => {
+      const dataVenc = document.getElementById('dataVencInput')?.value || null;
+      const dataPag = document.getElementById('dataPagInput')?.value || new Date().toISOString().split('T')[0];
+      await sb.from('financeiro_pagamentos_custos').upsert({
+        custo_id: custoId,
+        mes: mesVizualizado,
+        valor_pago: parseFloat(valor)||0,
+        data_vencimento: dataVenc || null,
+        data_pagamento: dataPag
+      }, {onConflict:'custo_id,mes'});
+      closeMiniModal();
+      const { data: rp } = await sb.from('financeiro_pagamentos_custos').select('*').eq('mes', mesVizualizado);
+      finPagamentos = rp || [];
+      renderFinanceiro();
+      toast('✓ Custo marcado como pago');
+    }},
+    { label: 'Cancelar', cls: 'btn-g', fn: closeMiniModal }
+  ].forEach(b => {
+    const el = document.createElement('button');
+    el.className = 'btn ' + b.cls; el.textContent = b.label; el.onclick = b.fn;
+    document.getElementById('fuMiniBtns').appendChild(el);
+  });
+}
+
 async function togglePagoCusto(custoId, estaPago) {
   if (estaPago) {
     await sb.from('financeiro_pagamentos_custos')
       .delete().eq('custo_id', custoId).eq('mes', mesVizualizado);
-    await loadFinanceiro();
+    const { data: rp } = await sb.from('financeiro_pagamentos_custos').select('*').eq('mes', mesVizualizado);
+    finPagamentos = rp || [];
     renderFinanceiro();
     toast('Pagamento removido');
   } else {
@@ -3466,7 +3527,10 @@ function openCustoModal(id = null) {
         </div>
         <div class="fg"><label class="fl">Valor (R$)</label><input class="fc2" id="cu-val" type="number" value="${c?.valor||''}" placeholder="0,00"></div>
       </div>
-      <div class="fg"><label class="fl">Observação</label><input class="fc2" id="cu-obs" value="${esc(c?.obs||'')}" placeholder="Opcional"></div>
+      <div class="fr">
+        <div class="fg"><label class="fl">Dia de vencimento (todo mês)</label><input class="fc2" id="cu-dia" type="number" min="1" max="31" value="${c?.dia_vencimento||''}" placeholder="Ex: 10"></div>
+        <div class="fg"><label class="fl">Observação</label><input class="fc2" id="cu-obs" value="${esc(c?.obs||'')}" placeholder="Opcional"></div>
+      </div>
       <div class="mf">
         <button class="btn btn-g" onclick="document.getElementById('custoOverlay').remove()">Cancelar</button>
         ${c?`<button class="btn btn-red" onclick="deleteCusto('${c.id}')">Excluir</button>`:''}
@@ -3481,6 +3545,7 @@ async function saveCusto(id) {
     nome: document.getElementById('cu-nome').value.trim(),
     categoria: document.getElementById('cu-cat').value,
     valor: parseFloat(document.getElementById('cu-val').value)||0,
+    dia_vencimento: parseInt(document.getElementById('cu-dia').value)||null,
     obs: document.getElementById('cu-obs').value.trim(),
   };
   if (!payload.nome) { toast('Nome é obrigatório'); return; }

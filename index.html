@@ -288,19 +288,15 @@ window.onload = async () => {
 };
 
 async function redirectUser(user) {
-  // Verificar nível de acesso
-  const { data: profile } = await sb.from('user_profiles')
-    .select('role').eq('id', user.id).single();
+  try {
+    const { data: profile } = await sb.from('user_profiles')
+      .select('role').eq('id', user.id).maybeSingle();
 
-  const role = profile?.role || 'colaborador';
-  if (role === 'admin') {
+    const role = profile?.role || 'colaborador';
     window.location.href = 'app.html';
-  } else if (role === 'colaborador' || role === 'visualizador') {
+  } catch(e) {
+    // Se não conseguir ler o perfil, manda para o app mesmo assim
     window.location.href = 'app.html';
-  } else {
-    // Sem perfil ainda — aguardar aprovação
-    showErr('loginErr', 'Sua conta ainda não foi aprovada. Aguarde o administrador.');
-    await sb.auth.signOut();
   }
 }
 

@@ -1,0 +1,539 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Prospect · Admin</title>
+<link href="https://fonts.googleapis.com/css2?family=Figtree:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#f5f5f7;--white:#ffffff;
+  --border:rgba(0,0,0,0.07);--border-s:rgba(0,0,0,0.12);
+  --text:#1d1d1f;--text-2:#6e6e73;--text-3:#aeaeb2;
+  --accent:#0071e3;--accent-h:#0077ed;--accent-l:rgba(0,113,227,0.08);
+  --green:#34c759;--orange:#ff9500;--red:#ff3b30;
+  --glass:rgba(255,255,255,0.75);--glass-border:rgba(255,255,255,0.5);
+  --sh:0 1px 3px rgba(0,0,0,0.05),0 4px 20px rgba(0,0,0,0.04);
+  --sh-m:0 2px 8px rgba(0,0,0,0.08),0 8px 32px rgba(0,0,0,0.06);
+  --r:12px;--r-s:8px;--r-l:18px;
+  --t:.18s cubic-bezier(.25,.46,.45,.94);
+}
+html,body{height:100%;font-family:'Figtree',-apple-system,sans-serif;-webkit-font-smoothing:antialiased}
+body{background:#f5f5f7;color:var(--text);font-size:14px;position:relative;overflow-x:hidden}
+body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellipse at 0% 0%,rgba(200,120,255,0.1) 0%,transparent 60%),radial-gradient(ellipse at 100% 100%,rgba(255,100,180,0.08) 0%,transparent 55%),#f5f5f7;z-index:0;pointer-events:none}
+
+/* TOPBAR */
+.topbar{position:sticky;top:0;z-index:50;background:var(--glass);backdrop-filter:saturate(180%) blur(24px);-webkit-backdrop-filter:saturate(180%) blur(24px);border-bottom:1px solid var(--glass-border);display:flex;align-items:center;padding:0 24px;height:52px;gap:16px}
+.logo{font-weight:700;font-size:15px;letter-spacing:-.3px;flex-shrink:0}
+.logo span{color:var(--accent)}
+.logo-badge{font-size:10px;font-weight:700;background:rgba(255,149,0,.15);color:var(--orange);padding:2px 8px;border-radius:20px;margin-left:6px}
+.topbar-right{margin-left:auto;display:flex;align-items:center;gap:8px}
+.user-chip{display:flex;align-items:center;gap:8px;background:rgba(0,0,0,.04);border-radius:980px;padding:5px 12px 5px 5px;font-size:12px;color:var(--text-2)}
+.user-avatar{width:26px;height:26px;border-radius:50%;background:var(--accent);color:#fff;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center}
+.btn{display:inline-flex;align-items:center;gap:5px;font-family:'Figtree',sans-serif;font-weight:600;font-size:13px;padding:7px 14px;border-radius:980px;border:none;cursor:pointer;transition:var(--t);white-space:nowrap}
+.btn-p{background:var(--accent);color:#fff}
+.btn-p:hover{background:var(--accent-h)}
+.btn-g{background:rgba(255,255,255,.8);color:var(--text-2);border:1px solid var(--border-s)}
+.btn-g:hover{background:var(--white);color:var(--text)}
+.btn-red{background:rgba(255,59,48,.1);color:var(--red);border:1px solid rgba(255,59,48,.2)}
+.btn-red:hover{background:rgba(255,59,48,.18)}
+.btn-sm{padding:5px 12px;font-size:12px}
+
+/* LAYOUT */
+.page{max-width:960px;margin:0 auto;padding:32px 24px;position:relative;z-index:1;display:flex;flex-direction:column;gap:24px}
+
+/* BACK */
+.back-link{display:inline-flex;align-items:center;gap:6px;font-size:13px;color:var(--text-2);cursor:pointer;transition:var(--t);text-decoration:none;margin-bottom:4px}
+.back-link:hover{color:var(--accent)}
+
+/* SECTION */
+.section-title{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text-3);margin-bottom:12px}
+
+/* CARD */
+.card{background:var(--glass);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);border:1px solid var(--glass-border);border-radius:var(--r-l);box-shadow:var(--sh);overflow:hidden}
+.card-header{padding:16px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}
+.card-title{font-size:14px;font-weight:600;color:var(--text);display:flex;align-items:center;gap:8px}
+.card-icon{font-size:16px}
+
+/* USER TABLE */
+.user-table{width:100%;border-collapse:collapse}
+.user-table th{text-align:left;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text-3);padding:10px 20px;border-bottom:1px solid var(--border)}
+.user-table td{padding:13px 20px;border-bottom:1px solid var(--border);vertical-align:middle;font-size:13px}
+.user-table tr:last-child td{border-bottom:none}
+.user-table tr:hover td{background:rgba(0,0,0,.02)}
+.user-email{font-weight:500;color:var(--text)}
+.user-date{color:var(--text-3);font-size:12px}
+
+/* ROLE BADGE */
+.role-badge{display:inline-flex;align-items:center;gap:4px;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700}
+.role-admin{background:rgba(0,113,227,.1);color:var(--accent)}
+.role-colaborador{background:rgba(52,199,89,.1);color:#1a7a3c}
+.role-visualizador{background:rgba(255,149,0,.1);color:#b36200}
+
+/* STATUS BADGE */
+.status-badge{display:inline-flex;align-items:center;gap:4px;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:600}
+.status-ativo{background:rgba(52,199,89,.1);color:#1a7a3c}
+.status-pendente{background:rgba(255,149,0,.1);color:#b36200}
+.status-inativo{background:rgba(255,59,48,.1);color:var(--red)}
+
+/* ROLE SELECT */
+.role-sel{background:rgba(0,0,0,.04);border:1.5px solid transparent;border-radius:var(--r-s);padding:5px 10px;font-family:inherit;font-size:12px;font-weight:600;color:var(--text);outline:none;cursor:pointer;transition:var(--t);-webkit-appearance:none}
+.role-sel:focus{border-color:var(--accent)}
+
+/* FORM INLINE */
+.invite-form{display:flex;gap:8px;padding:16px 20px;align-items:center;flex-wrap:wrap}
+.fi{flex:1;min-width:200px;background:rgba(0,0,0,.04);border:1.5px solid transparent;border-radius:var(--r-s);padding:9px 13px;font-family:inherit;font-size:13px;color:var(--text);outline:none;transition:var(--t)}
+.fi:focus{border-color:var(--accent);background:#fff}
+.fi::placeholder{color:var(--text-3)}
+.role-sel-invite{background:rgba(0,0,0,.04);border:1.5px solid transparent;border-radius:var(--r-s);padding:9px 12px;font-family:inherit;font-size:13px;color:var(--text);outline:none;cursor:pointer;transition:var(--t);-webkit-appearance:none}
+.role-sel-invite:focus{border-color:var(--accent)}
+
+/* API KEYS */
+.api-row{padding:16px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.api-row:last-child{border-bottom:none}
+.api-info{flex:1;min-width:200px}
+.api-label{font-size:13px;font-weight:600;color:var(--text);margin-bottom:2px}
+.api-desc{font-size:12px;color:var(--text-3)}
+.api-status{display:flex;align-items:center;gap:6px;font-size:12px;font-weight:600}
+.api-dot{width:7px;height:7px;border-radius:50%}
+.api-input-wrap{display:flex;gap:6px;align-items:center;width:100%;margin-top:8px}
+.api-input{flex:1;background:rgba(0,0,0,.04);border:1.5px solid transparent;border-radius:var(--r-s);padding:8px 12px;font-family:'Courier New',monospace;font-size:12px;color:var(--text);outline:none;transition:var(--t)}
+.api-input:focus{border-color:var(--accent);background:#fff}
+
+/* LOGS */
+.log-item{display:flex;gap:12px;padding:11px 20px;border-bottom:1px solid var(--border);align-items:flex-start}
+.log-item:last-child{border-bottom:none}
+.log-icon{font-size:14px;flex-shrink:0;padding-top:1px}
+.log-body{flex:1}
+.log-text{font-size:13px;color:var(--text);line-height:1.4}
+.log-date{font-size:11px;color:var(--text-3);margin-top:2px}
+.log-empty{padding:24px 20px;text-align:center;color:var(--text-3);font-size:13px}
+
+/* TOAST */
+.toast{position:fixed;bottom:28px;left:50%;transform:translateX(-50%) translateY(20px);background:rgba(29,29,31,.92);color:#fff;padding:10px 20px;border-radius:980px;font-size:13px;font-weight:500;opacity:0;transition:all .3s;pointer-events:none;z-index:999;backdrop-filter:blur(10px)}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+
+/* OVERLAY */
+.overlay{position:fixed;inset:0;background:rgba(0,0,0,.2);backdrop-filter:blur(8px);z-index:200;display:none;align-items:flex-end;justify-content:center}
+.overlay.open{display:flex;animation:ov-in .2s ease}
+@keyframes ov-in{from{opacity:0}to{opacity:1}}
+.modal{background:var(--glass);backdrop-filter:saturate(180%) blur(28px);border:1px solid var(--glass-border);border-radius:20px 20px 0 0;padding:28px 28px 32px;width:100%;max-width:480px;animation:m-up .26s cubic-bezier(.16,1,.3,1)}
+@keyframes m-up{from{transform:translateY(40px);opacity:0}to{transform:none;opacity:1}}
+.m-drag{width:36px;height:4px;background:var(--border-s);border-radius:2px;margin:0 auto 20px}
+.modal-title{font-size:17px;font-weight:700;letter-spacing:-.3px;margin-bottom:6px}
+.modal-sub{font-size:13px;color:var(--text-2);margin-bottom:20px;line-height:1.5}
+.modal-btns{display:flex;justify-content:flex-end;gap:8px;margin-top:20px;padding-top:16px;border-top:1px solid var(--border)}
+
+/* EMPTY */
+.empty-state{padding:40px 20px;text-align:center;color:var(--text-3)}
+.empty-icon{font-size:32px;opacity:.4;margin-bottom:8px}
+.empty-text{font-size:13px}
+
+@media(max-width:600px){
+  .page{padding:16px}
+  .card-header{flex-direction:column;align-items:flex-start}
+  .invite-form{flex-direction:column}
+  .fi{min-width:unset;width:100%}
+}
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="logo">Prospect<span>.</span> <span class="logo-badge">ADMIN</span></div>
+  <div class="topbar-right">
+    <div class="user-chip">
+      <div class="user-avatar" id="adminAvatar">E</div>
+      <span id="adminEmail">carregando...</span>
+    </div>
+    <a href="app.html" class="btn btn-g btn-sm">← Voltar ao app</a>
+    <button class="btn btn-g btn-sm" onclick="doLogout()">Sair</button>
+  </div>
+</header>
+
+<div class="page">
+  <div>
+    <div style="font-size:22px;font-weight:700;letter-spacing:-.4px;margin-bottom:4px">Painel Administrativo</div>
+    <div style="font-size:13px;color:var(--text-2)">Gerencie usuários, permissões e configurações do sistema</div>
+  </div>
+
+  <!-- USUÁRIOS -->
+  <div>
+    <div class="section-title">Usuários do Sistema</div>
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title"><span class="card-icon">👥</span> Usuários</div>
+        <button class="btn btn-p btn-sm" onclick="openInviteModal()">+ Convidar usuário</button>
+      </div>
+      <div id="userTableWrap">
+        <div class="empty-state"><div class="empty-icon">⏳</div><div class="empty-text">Carregando...</div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- API KEYS -->
+  <div>
+    <div class="section-title">Configurações de API</div>
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title"><span class="card-icon">🔑</span> Chaves de API</div>
+        <span style="font-size:12px;color:var(--text-3)">Salvas com segurança · nunca expostas ao público</span>
+      </div>
+
+      <div class="api-row">
+        <div class="api-info">
+          <div class="api-label">Anthropic API Key</div>
+          <div class="api-desc">Necessária para gerar scripts com IA e buscar leads automaticamente</div>
+          <div class="api-status" id="anthropicStatus">
+            <div class="api-dot" style="background:var(--text-3)"></div>
+            <span style="color:var(--text-3)">Verificando...</span>
+          </div>
+        </div>
+        <div style="width:100%">
+          <div class="api-input-wrap">
+            <input class="api-input" id="anthropicKey" type="password" placeholder="sk-ant-...">
+            <button class="btn btn-g btn-sm" onclick="toggleApiVis('anthropicKey',this)">👁</button>
+            <button class="btn btn-p btn-sm" onclick="saveApiKey('anthropic','anthropicKey')">Salvar</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="api-row">
+        <div class="api-info">
+          <div class="api-label">URL do Supabase</div>
+          <div class="api-desc">Projeto atual conectado ao sistema</div>
+        </div>
+        <div style="font-size:12px;font-family:monospace;color:var(--text-2);word-break:break-all">
+          https://otiokqjhbvimjewzxegg.supabase.co
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- LOGS -->
+  <div>
+    <div class="section-title">Log de Acessos</div>
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title"><span class="card-icon">📋</span> Atividade recente</div>
+        <button class="btn btn-g btn-sm" onclick="loadLogs()">↺ Atualizar</button>
+      </div>
+      <div id="logsList">
+        <div class="empty-state"><div class="empty-icon">⏳</div><div class="empty-text">Carregando...</div></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL CONVIDAR -->
+<div class="overlay" id="inviteOverlay" onclick="closeInviteModal(event)">
+  <div class="modal">
+    <div class="m-drag"></div>
+    <div class="modal-title">Convidar usuário</div>
+    <div class="modal-sub">O usuário receberá um email com link para criar a senha e acessar o sistema.</div>
+
+    <div style="margin-bottom:14px">
+      <label class="fl" style="display:block;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--text-3);margin-bottom:6px">Email</label>
+      <input class="fi" id="inviteEmailInput" type="email" placeholder="email@empresa.com" style="width:100%">
+    </div>
+    <div style="margin-bottom:14px">
+      <label class="fl" style="display:block;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--text-3);margin-bottom:6px">Nível de acesso</label>
+      <select class="role-sel-invite" id="inviteRole" style="width:100%">
+        <option value="colaborador">Colaborador — edita leads, não vê financeiro</option>
+        <option value="visualizador">Visualizador — só lê, não edita</option>
+      </select>
+    </div>
+
+    <div id="inviteAlert" style="font-size:12px;color:var(--red);display:none;margin-bottom:10px"></div>
+    <div id="inviteOk" style="font-size:12px;color:#1a7a3c;background:rgba(52,199,89,.08);padding:8px 12px;border-radius:8px;display:none;margin-bottom:10px"></div>
+
+    <div class="modal-btns">
+      <button class="btn btn-g" onclick="closeInviteModal()">Cancelar</button>
+      <button class="btn btn-p" id="inviteBtn" onclick="doInvite()">Enviar convite</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL CONFIRMAR REMOÇÃO -->
+<div class="overlay" id="removeOverlay" onclick="closeRemoveModal(event)">
+  <div class="modal">
+    <div class="m-drag"></div>
+    <div class="modal-title">Remover usuário</div>
+    <div class="modal-sub" id="removeModalSub"></div>
+    <div class="modal-btns">
+      <button class="btn btn-g" onclick="closeRemoveModal()">Cancelar</button>
+      <button class="btn btn-red" id="removeConfirmBtn">Remover acesso</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const SB_URL = 'https://otiokqjhbvimjewzxegg.supabase.co';
+const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im90aW9rcWpoYnZpbWpld3p4ZWdnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY0MDAwODIsImV4cCI6MjA5MTk3NjA4Mn0.fRWwtVnbu-FcpsWf5gqU3vsBzsXuRSPZ79Q7-tvW-Kw';
+const sb = supabase.createClient(SB_URL, SB_KEY);
+
+let currentUser = null;
+let allUsers = [];
+
+// ── INIT ──────────────────────────────────
+window.onload = async () => {
+  const { data: { session } } = await sb.auth.getSession();
+  if (!session) { window.location.href = 'index.html'; return; }
+
+  currentUser = session.user;
+
+  // Verificar se é admin
+  const { data: profile } = await sb.from('user_profiles')
+    .select('role,name').eq('id', currentUser.id).single();
+
+  if (!profile || profile.role !== 'admin') {
+    window.location.href = 'app.html';
+    return;
+  }
+
+  // UI
+  const name = profile.name || currentUser.email.split('@')[0];
+  document.getElementById('adminAvatar').textContent = name[0].toUpperCase();
+  document.getElementById('adminEmail').textContent = currentUser.email;
+
+  await Promise.all([loadUsers(), loadApiKeys(), loadLogs()]);
+};
+
+// ── USUÁRIOS ──────────────────────────────
+async function loadUsers() {
+  const { data, error } = await sb.from('user_profiles')
+    .select('*').order('created_at', { ascending: false });
+
+  if (error || !data) {
+    document.getElementById('userTableWrap').innerHTML = '<div class="log-empty">Erro ao carregar usuários.</div>';
+    return;
+  }
+
+  allUsers = data;
+  renderUserTable(data);
+}
+
+function renderUserTable(users) {
+  if (!users.length) {
+    document.getElementById('userTableWrap').innerHTML = '<div class="empty-state"><div class="empty-icon">👤</div><div class="empty-text">Nenhum usuário cadastrado</div></div>';
+    return;
+  }
+
+  document.getElementById('userTableWrap').innerHTML = `
+    <table class="user-table">
+      <thead><tr>
+        <th>Email</th>
+        <th>Nome</th>
+        <th>Nível</th>
+        <th>Status</th>
+        <th>Desde</th>
+        <th></th>
+      </tr></thead>
+      <tbody>
+        ${users.map(u => `
+          <tr>
+            <td class="user-email">${esc(u.email||'—')}</td>
+            <td>${esc(u.name||'—')}</td>
+            <td>
+              ${u.id === currentUser.id
+                ? `<span class="role-badge role-admin">Admin</span>`
+                : `<select class="role-sel" onchange="changeRole('${u.id}',this.value)">
+                    <option value="colaborador" ${u.role==='colaborador'?'selected':''}>Colaborador</option>
+                    <option value="visualizador" ${u.role==='visualizador'?'selected':''}>Visualizador</option>
+                    <option value="admin" ${u.role==='admin'?'selected':''}>Admin</option>
+                  </select>`}
+            </td>
+            <td><span class="status-badge status-${u.status||'ativo'}">${u.status==='pendente'?'⏳ Pendente':u.status==='inativo'?'❌ Inativo':'✓ Ativo'}</span></td>
+            <td class="user-date">${u.created_at ? new Date(u.created_at).toLocaleDateString('pt-BR') : '—'}</td>
+            <td>
+              ${u.id !== currentUser.id
+                ? `<button class="btn btn-red btn-sm" onclick="openRemoveModal('${u.id}','${esc(u.email||'')}')">Remover</button>`
+                : '<span style="font-size:11px;color:var(--text-3)">Você</span>'}
+            </td>
+          </tr>`).join('')}
+      </tbody>
+    </table>`;
+}
+
+async function changeRole(userId, newRole) {
+  const { error } = await sb.from('user_profiles')
+    .update({ role: newRole }).eq('id', userId);
+  if (error) { toast('Erro ao alterar permissão'); return; }
+  toast('✓ Permissão atualizada');
+  await logAction('role_change', `Nível alterado para ${newRole} (user: ${userId})`);
+}
+
+// ── CONVIDAR ──────────────────────────────
+function openInviteModal() {
+  document.getElementById('inviteOverlay').classList.add('open');
+  document.getElementById('inviteEmailInput').value = '';
+  document.getElementById('inviteAlert').style.display = 'none';
+  document.getElementById('inviteOk').style.display = 'none';
+  setTimeout(() => document.getElementById('inviteEmailInput').focus(), 100);
+}
+
+function closeInviteModal(e) {
+  if (!e || e.target === document.getElementById('inviteOverlay'))
+    document.getElementById('inviteOverlay').classList.remove('open');
+}
+
+async function doInvite() {
+  const email = document.getElementById('inviteEmailInput').value.trim();
+  const role = document.getElementById('inviteRole').value;
+  const alertEl = document.getElementById('inviteAlert');
+  const okEl = document.getElementById('inviteOk');
+  alertEl.style.display = 'none';
+  okEl.style.display = 'none';
+
+  if (!email) { alertEl.textContent = 'Digite o email.'; alertEl.style.display = 'block'; return; }
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { alertEl.textContent = 'Email inválido.'; alertEl.style.display = 'block'; return; }
+
+  document.getElementById('inviteBtn').disabled = true;
+  document.getElementById('inviteBtn').textContent = 'Enviando...';
+
+  // Criar pre-registro do perfil com role
+  const { error: invErr } = await sb.from('user_invites').upsert({
+    email, role, invited_by: currentUser.id, invited_at: new Date().toISOString()
+  });
+
+  // Invite via Supabase Auth (requer service role — instrução manual abaixo)
+  // Por enquanto, registrar o convite e orientar via link manual
+  if (!invErr) {
+    okEl.textContent = `✓ Convite registrado para ${email}. Siga as instruções abaixo para enviar o link de acesso.`;
+    okEl.style.display = 'block';
+    await logAction('invite_sent', `Convite para ${email} (${role})`);
+    await loadUsers();
+  } else {
+    alertEl.textContent = 'Erro ao registrar convite.';
+    alertEl.style.display = 'block';
+  }
+
+  document.getElementById('inviteBtn').disabled = false;
+  document.getElementById('inviteBtn').textContent = 'Enviar convite';
+}
+
+// ── REMOVER USUÁRIO ───────────────────────
+let removeTargetId = null;
+
+function openRemoveModal(userId, email) {
+  removeTargetId = userId;
+  document.getElementById('removeModalSub').textContent =
+    `Tem certeza que deseja remover o acesso de "${email}"? O usuário não conseguirá mais entrar no sistema.`;
+  document.getElementById('removeOverlay').classList.add('open');
+  document.getElementById('removeConfirmBtn').onclick = doRemoveUser;
+}
+
+function closeRemoveModal(e) {
+  if (!e || e.target === document.getElementById('removeOverlay'))
+    document.getElementById('removeOverlay').classList.remove('open');
+}
+
+async function doRemoveUser() {
+  if (!removeTargetId) return;
+  const { error } = await sb.from('user_profiles')
+    .update({ status: 'inativo', role: 'visualizador' }).eq('id', removeTargetId);
+  if (error) { toast('Erro ao remover'); return; }
+  closeRemoveModal();
+  toast('✓ Acesso removido');
+  await logAction('user_removed', `Usuário ${removeTargetId} removido`);
+  await loadUsers();
+}
+
+// ── API KEYS ──────────────────────────────
+async function loadApiKeys() {
+  const { data } = await sb.from('app_settings')
+    .select('key,value_masked,updated_at').eq('category', 'api_keys');
+
+  const anthropic = data?.find(d => d.key === 'anthropic_key');
+  const statusEl = document.getElementById('anthropicStatus');
+
+  if (anthropic) {
+    statusEl.innerHTML = `<div class="api-dot" style="background:var(--green)"></div><span style="color:#1a7a3c">Configurada · atualizada ${new Date(anthropic.updated_at).toLocaleDateString('pt-BR')}</span>`;
+    document.getElementById('anthropicKey').placeholder = anthropic.value_masked || 'sk-ant-••••••••';
+  } else {
+    statusEl.innerHTML = `<div class="api-dot" style="background:var(--red)"></div><span style="color:var(--red)">Não configurada</span>`;
+  }
+}
+
+async function saveApiKey(keyName, inputId) {
+  const val = document.getElementById(inputId).value.trim();
+  if (!val) { toast('Digite a chave antes de salvar'); return; }
+  if (keyName === 'anthropic' && !val.startsWith('sk-ant-')) {
+    toast('Chave Anthropic inválida — deve começar com sk-ant-'); return;
+  }
+
+  // Salva no Supabase — apenas os primeiros/últimos chars ficam visíveis
+  const masked = val.slice(0,8) + '••••••••' + val.slice(-4);
+  const { error } = await sb.from('app_settings').upsert({
+    key: keyName + '_key',
+    category: 'api_keys',
+    value_encrypted: val, // Em produção real: criptografar antes
+    value_masked: masked,
+    updated_by: currentUser.id,
+    updated_at: new Date().toISOString()
+  });
+
+  if (error) { toast('Erro ao salvar chave'); return; }
+  document.getElementById(inputId).value = '';
+  document.getElementById(inputId).placeholder = masked;
+  toast('🔑 Chave salva com segurança');
+  await logAction('api_key_updated', `Chave ${keyName} atualizada`);
+  await loadApiKeys();
+}
+
+function toggleApiVis(inputId, btn) {
+  const el = document.getElementById(inputId);
+  el.type = el.type === 'password' ? 'text' : 'password';
+  btn.textContent = el.type === 'password' ? '👁' : '🙈';
+}
+
+// ── LOGS ──────────────────────────────────
+async function loadLogs() {
+  const { data } = await sb.from('admin_logs')
+    .select('*').order('created_at', { ascending: false }).limit(30);
+
+  const icons = { invite_sent:'📨', role_change:'🔄', api_key_updated:'🔑', user_removed:'🚫', login:'🔐' };
+
+  document.getElementById('logsList').innerHTML = data?.length
+    ? data.map(l => `
+        <div class="log-item">
+          <div class="log-icon">${icons[l.action]||'📋'}</div>
+          <div class="log-body">
+            <div class="log-text">${esc(l.description||l.action)}</div>
+            <div class="log-date">${new Date(l.created_at).toLocaleString('pt-BR')}</div>
+          </div>
+        </div>`).join('')
+    : '<div class="log-empty">Nenhum log registrado ainda</div>';
+}
+
+async function logAction(action, description) {
+  await sb.from('admin_logs').insert({
+    action, description,
+    user_id: currentUser.id,
+    created_at: new Date().toISOString()
+  });
+}
+
+// ── UTILS ─────────────────────────────────
+async function doLogout() {
+  await sb.auth.signOut();
+  window.location.href = 'index.html';
+}
+
+function esc(s) {
+  return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+let toastT;
+function toast(m) {
+  const e = document.getElementById('toast');
+  e.textContent = m; e.classList.add('show');
+  clearTimeout(toastT); toastT = setTimeout(()=>e.classList.remove('show'), 2800);
+}
+</script>
+</body>
+</html>

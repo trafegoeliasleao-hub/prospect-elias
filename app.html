@@ -2937,62 +2937,149 @@ function getNichoOptions(selected = '') {
 }
 
 async function deleteCliente(id) {
-  if (!confirm('Excluir este cliente?')) return;
-  await sb.from('clientes_ativos').delete().eq('id', id);
+  const c = clientes.find(x=>x.id===id);
+  if (!c) return;
+
   document.getElementById('clienteOverlay')?.remove();
-  await loadClientes();
-  renderClientes();
-  toast('Cliente removido');
+
+  // Se tem lead vinculado, perguntar o que fazer
+  if (c.lead_id) {
+    const l = getLead(c.lead_id);
+    const nomeRef = l?.name || c.name;
+    showMiniModal(
+      '🗑 Excluir cliente',
+      `O que deseja fazer com o lead "${nomeRef}" vinculado a este cliente?`,
+      [
+        { label: '🔴 Manter como Perdido', cls: 'btn-g', fn: async () => {
+          closeMiniModal();
+          await sb.from('clientes_ativos').delete().eq('id', id);
+          if (l) { l.status = 'perdido'; await persistLead(l); }
+          await Promise.all([loadLeads(), loadClientes()]);
+          renderAll(); renderClientes();
+          toast('Cliente removido · lead marcado como Perdido');
+        }},
+        { label: '🗑 Excluir lead também', cls: 'btn-red', fn: async () => {
+          closeMiniModal();
+          await sb.from('clientes_ativos').delete().eq('id', id);
+          if (l) await removeLead(l.id);
+          await Promise.all([loadLeads(), loadClientes()]);
+          renderAll(); renderClientes();
+          toast('Cliente e lead removidos');
+        }},
+        { label: 'Cancelar', cls: 'btn-g', fn: closeMiniModal }
+      ]
+    );
+  } else {
+    // Sem lead vinculado — excluir direto
+    showMiniModal(
+      '🗑 Excluir cliente',
+      `Tem certeza que deseja excluir "${c.name}"? Esta ação não pode ser desfeita.`,
+      [
+        { label: 'Excluir', cls: 'btn-red', fn: async () => {
+          closeMiniModal();
+          await sb.from('clientes_ativos').delete().eq('id', id);
+          await loadClientes();
+          renderClientes();
+          toast('Cliente removido');
+        }},
+        { label: 'Cancelar', cls: 'btn-g', fn: closeMiniModal }
+      ]
+    );
+  }
 }
 
 // ── FINANCEIRO ────────────────────────────
-let finCustos = [], finMeses = [], finPagamentos = [];
+let finCustos = [], finMeses = [], finPagamentos = [], finVariaveis = [];
 let mesVizualizado = new Date().toISOString().slice(0,7);
 const mesAtualFin = new Date().toISOString().slice(0,7);
 
 async function loadFinanceiro() {
-  const [rc, rm, rp] = await Promise.all([
+  const [rc, rm, rp, rv] = await Promise.all([
     sb.from('financeiro_custos').select('*').order('categoria'),
     sb.from('financeiro_meses').select('*').order('mes', {ascending:false}).limit(24),
-    sb.from('financeiro_pagamentos_custos').select('*').eq('mes', mesVizualizado)
+    sb.from('financeiro_pagamentos_custos').select('*').eq('mes', mesVizualizado),
+    sb.from('financeiro_variaveis').select('*').eq('mes', mesVizualizado).order('created_at')
   ]);
   finCustos = rc.data || [];
   finMeses = rm.data || [];
   finPagamentos = rp.data || [];
+  finVariaveis = rv.data || [];
 }
 
 async function navegarMes(dir) {
   const [ano, mes] = mesVizualizado.split('-').map(Number);
   const d = new Date(ano, mes - 1 + dir, 1);
+  const mesAnterior = mesVizualizado;
   mesVizualizado = d.toISOString().slice(0,7);
-  // Recarregar pagamentos do novo mês
-  const { data } = await sb.from('financeiro_pagamentos_custos').select('*').eq('mes', mesVizualizado);
-  finPagamentos = data || [];
-  // Verificar se mês tem dados, se não, verificar mês anterior para sugerir cópia
-  const mesExiste = finMeses.find(m => m.mes === mesVizualizado);
-  if (!mesExiste && mesVizualizado >= mesAtualFin) {
-    const mesAnt = new Date(d.getFullYear(), d.getMonth()-1, 1).toISOString().slice(0,7);
-    const custosMesAnt = await sb.from('financeiro_pagamentos_custos').select('*').eq('mes', mesAnt);
-    if (finCustos.length > 0) {
-      renderFinanceiro();
-      // Mostrar sugestão de cópia
-      setTimeout(() => sugerirCopiarCustos(mesAnt), 100);
-      return;
+
+  const [rp, rv] = await Promise.all([
+    sb.from('financeiro_pagamentos_custos').select('*').eq('mes', mesVizualizado),
+    sb.from('financeiro_variaveis').select('*').eq('mes', mesVizualizado).order('created_at')
+  ]);
+  finPagamentos = rp.data || [];
+  finVariaveis = rv.data || [];
+
+  renderFinanceiro();
+
+  // Sugerir cópia se mês futuro/atual sem dados
+  const semFixos = finPagamentos.length === 0 && mesVizualizado >= mesAtualFin;
+  const semVariaveis = finVariaveis.length === 0 && mesVizualizado >= mesAtualFin;
+
+  if (semFixos && finCustos.length > 0 && dir > 0) {
+    setTimeout(() => sugerirCopiarCustos(mesAnterior), 150);
+  } else if (semVariaveis && dir > 0) {
+    // Buscar variáveis do mês anterior para sugerir
+    const { data: varAnt } = await sb.from('financeiro_variaveis')
+      .select('*').eq('mes', mesAnterior);
+    if (varAnt?.length > 0) {
+      setTimeout(() => sugerirCopiarVariaveis(mesAnterior, varAnt), 150);
     }
   }
-  renderFinanceiro();
 }
 
 function sugerirCopiarCustos(mesAnt) {
   showMiniModal(
-    `📋 Copiar custos de ${mesAnt}?`,
-    `Encontramos ${finCustos.filter(c=>c.ativo).length} custo(s) fixo(s) cadastrado(s). Deseja adicioná-los ao mês ${mesVizualizado} já marcados como pendentes?`,
+    `📋 Copiar custos de ${getMesLabel(mesAnt)}?`,
+    `Encontramos ${finCustos.filter(c=>c.ativo).length} custo(s) fixo(s) cadastrado(s). Deseja usá-los como base para ${getMesLabel(mesVizualizado)}? Você poderá editar datas e valores individualmente depois.`,
     [
-      { label: '✓ Sim, copiar todos', cls: 'btn-p', fn: async () => {
+      { label: '✓ Sim, usar como base', cls: 'btn-p', fn: async () => {
         closeMiniModal();
-        toast('✓ Custos já disponíveis — marque como pago conforme forem pagos');
+        toast('✓ Custos disponíveis — marque como pago conforme forem pagos');
+        // Verificar variáveis do mês anterior também
+        const { data: varAnt } = await sb.from('financeiro_variaveis').select('*').eq('mes', mesAnt);
+        if (varAnt?.length > 0) setTimeout(() => sugerirCopiarVariaveis(mesAnt, varAnt), 300);
       }},
-      { label: 'Não, começar do zero', cls: 'btn-g', fn: closeMiniModal }
+      { label: '✕ Agora não', cls: 'btn-g', fn: closeMiniModal }
+    ]
+  );
+}
+
+function sugerirCopiarVariaveis(mesAnt, variaveis) {
+  showMiniModal(
+    `📋 Contas variáveis de ${getMesLabel(mesAnt)}`,
+    `Você teve ${variaveis.length} conta(s) variável(eis) em ${getMesLabel(mesAnt)}:\n${variaveis.map(v=>`• ${v.nome}: ${fmtMoeda(v.valor)}`).join('\n')}\n\nDeseja copiar como prévia para ${getMesLabel(mesVizualizado)}?`,
+    [
+      { label: '✓ Copiar como prévia', cls: 'btn-p', fn: async () => {
+        closeMiniModal();
+        // Copiar variáveis sem marcar como pagas
+        for (const v of variaveis) {
+          await sb.from('financeiro_variaveis').insert({
+            mes: mesVizualizado,
+            nome: v.nome,
+            categoria: v.categoria,
+            valor: v.valor,
+            data_vencimento: null, // sem data — usuário ajusta
+            pago: false,
+            obs: `Copiado de ${getMesLabel(mesAnt)}`
+          });
+        }
+        const { data: rv } = await sb.from('financeiro_variaveis')
+          .select('*').eq('mes', mesVizualizado).order('created_at');
+        finVariaveis = rv || [];
+        renderFinanceiro();
+        toast(`✓ ${variaveis.length} conta(s) variável(eis) copiada(s)`);
+      }},
+      { label: '✕ Não copiar', cls: 'btn-g', fn: closeMiniModal }
     ]
   );
 }
@@ -3012,12 +3099,15 @@ function getMesesNav() {
 function renderFinanceiro() {
   const wrap = document.getElementById('finWrap');
   const totalCustos = finCustos.filter(c=>c.ativo&&c.recorrente).reduce((s,c)=>s+Number(c.valor),0);
+  const totalVariaveis = finVariaveis.reduce((s,v)=>s+Number(v.valor),0);
   const totalReceita = clientes.filter(c=>c.status_contrato==='ativo'&&c.status_pagamento!=='cancelado')
     .reduce((s,c)=>s+Number(c.valor_contrato||0),0);
-  const lucro = totalReceita - totalCustos;
+  const lucro = totalReceita - totalCustos - totalVariaveis;
   const custosPagos = finPagamentos.reduce((s,p)=>s+Number(p.valor_pago||0),0);
+  const variaveisPagas = finVariaveis.filter(v=>v.pago).reduce((s,v)=>s+Number(v.valor),0);
+  const totalPago = custosPagos + variaveisPagas;
   const custosPendentes = totalCustos - custosPagos;
-  const caixaAtual = totalReceita - custosPagos;
+  const caixaAtual = totalReceita - totalPago;
 
   const mesData = finMeses.find(m=>m.mes===mesVizualizado);
   const {ant, prox} = getMesesNav();
@@ -3134,6 +3224,39 @@ function renderFinanceiro() {
         </div>
       </div>
 
+      <!-- CONTAS VARIÁVEIS -->
+      <div class="card">
+        <div class="ch">
+          <div class="ct"><span class="ct-i">📊</span> Contas Variáveis — ${mesNome}</div>
+          <button class="btn btn-p btn-sm" onclick="openVariavelModal()">+ Adicionar</button>
+        </div>
+        <div id="variaveisLista">
+          ${finVariaveis.length ? finVariaveis.map(v => `
+            <div class="custo-row ${v.pago?'':''}">
+              <div style="display:flex;align-items:center;gap:10px;flex:1;min-width:0;cursor:pointer" onclick="togglePagoVariavel('${v.id}',${v.pago})">
+                <div style="width:22px;height:22px;border-radius:50%;border:2px solid ${v.pago?'var(--green)':'var(--border-s)'};background:${v.pago?'var(--green)':'transparent'};display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:var(--t)">
+                  ${v.pago?'<svg width="10" height="8" viewBox="0 0 10 8" fill="none"><path d="M1 4l3 3 5-6" stroke="#fff" stroke-width="1.8" stroke-linecap="round"/></svg>':''}
+                </div>
+                <div>
+                  <div class="custo-nome" style="${v.pago?'text-decoration:line-through;color:var(--text-3)':''}">${esc(v.nome)}</div>
+                  <div class="custo-cat">${esc(v.categoria||'variável')}${v.data_vencimento?` · vence ${new Date(v.data_vencimento+'T12:00:00').toLocaleDateString('pt-BR')}`:''} ${v.pago&&v.data_pagamento?`· pago em ${new Date(v.data_pagamento+'T12:00:00').toLocaleDateString('pt-BR')}`:''} ${v.obs?`· ${esc(v.obs)}`:''}</div>
+                </div>
+              </div>
+              <div class="custo-val" style="${v.pago?'color:var(--green)':''}">${fmtMoeda(v.valor)}</div>
+              <div style="display:flex;gap:4px">
+                <button class="btn btn-g btn-sm" onclick="openVariavelModal('${v.id}')">✏️</button>
+                <button class="btn btn-g btn-sm" style="color:var(--red)" onclick="deleteVariavel('${v.id}')">🗑</button>
+              </div>
+            </div>`).join('')
+          : '<div class="h-emp">Nenhuma conta variável neste mês</div>'}
+          ${finVariaveis.length ? `
+          <div style="padding:10px 20px;border-top:1px solid var(--border);display:flex;justify-content:space-between;align-items:center">
+            <span style="font-size:12px;color:var(--text-3)">${finVariaveis.filter(v=>v.pago).length} de ${finVariaveis.length} pago(s)</span>
+            <span style="font-size:13px;font-weight:700;color:var(--red)">Total: ${fmtMoeda(finVariaveis.reduce((s,v)=>s+Number(v.valor),0))}</span>
+          </div>` : ''}
+        </div>
+      </div>
+
       <!-- HISTÓRICO MENSAL -->
       <div class="card">
         <div class="ch">
@@ -3214,6 +3337,109 @@ async function togglePagoCusto(custoId, estaPago) {
   } else {
     const custo = finCustos.find(c=>c.id===custoId);
     if (custo) marcarCustoPago(custoId, custo.valor);
+  }
+}
+
+// ── CONTAS VARIÁVEIS ──────────────────────
+function openVariavelModal(id = null) {
+  const v = id ? finVariaveis.find(x=>x.id===id) : null;
+  const overlay = document.createElement('div');
+  overlay.className = 'overlay open';
+  overlay.id = 'variavelOverlay';
+  overlay.onclick = e => { if(e.target===overlay) overlay.remove(); };
+  overlay.innerHTML = `
+    <div class="modal">
+      <div class="m-drag"></div>
+      <div class="mt">${v?'Editar Conta Variável':'Nova Conta Variável'}</div>
+      <div class="fg"><label class="fl">Nome</label><input class="fc2" id="vr-nome" value="${esc(v?.nome||'')}" placeholder="Ex: Combustível, Imposto, Material"></div>
+      <div class="fr">
+        <div class="fg"><label class="fl">Categoria</label>
+          <select class="fc2" id="vr-cat">
+            <option value="variavel" ${(!v||v.categoria==='variavel')?'selected':''}>Variável</option>
+            <option value="imposto" ${v?.categoria==='imposto'?'selected':''}>Imposto</option>
+            <option value="transporte" ${v?.categoria==='transporte'?'selected':''}>Transporte</option>
+            <option value="marketing" ${v?.categoria==='marketing'?'selected':''}>Marketing</option>
+            <option value="pessoal" ${v?.categoria==='pessoal'?'selected':''}>Pessoal</option>
+            <option value="outro" ${v?.categoria==='outro'?'selected':''}>Outro</option>
+          </select>
+        </div>
+        <div class="fg"><label class="fl">Valor (R$)</label><input class="fc2" id="vr-val" type="number" value="${v?.valor||''}" placeholder="0,00"></div>
+      </div>
+      <div class="fr">
+        <div class="fg"><label class="fl">Vencimento</label><input class="fc2" id="vr-venc" type="date" value="${v?.data_vencimento||''}"></div>
+        <div class="fg"><label class="fl">Mês referência</label><input class="fc2" id="vr-mes" value="${v?.mes||mesVizualizado}" placeholder="YYYY-MM"></div>
+      </div>
+      <div class="fg"><label class="fl">Observação</label><input class="fc2" id="vr-obs" value="${esc(v?.obs||'')}" placeholder="Opcional"></div>
+      <div class="mf">
+        <button class="btn btn-g" onclick="document.getElementById('variavelOverlay').remove()">Cancelar</button>
+        ${v?`<button class="btn btn-red" onclick="deleteVariavel('${v.id}')">Excluir</button>`:''}
+        <button class="btn btn-p" onclick="saveVariavel('${id||''}')">Salvar</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+}
+
+async function saveVariavel(id) {
+  const payload = {
+    mes: document.getElementById('vr-mes').value.trim() || mesVizualizado,
+    nome: document.getElementById('vr-nome').value.trim(),
+    categoria: document.getElementById('vr-cat').value,
+    valor: parseFloat(document.getElementById('vr-val').value)||0,
+    data_vencimento: document.getElementById('vr-venc').value||null,
+    obs: document.getElementById('vr-obs').value.trim(),
+  };
+  if (!payload.nome) { toast('Nome é obrigatório'); return; }
+  if (id) {
+    await sb.from('financeiro_variaveis').update(payload).eq('id', id);
+  } else {
+    await sb.from('financeiro_variaveis').insert(payload);
+  }
+  document.getElementById('variavelOverlay')?.remove();
+  const { data: rv } = await sb.from('financeiro_variaveis')
+    .select('*').eq('mes', mesVizualizado).order('created_at');
+  finVariaveis = rv || [];
+  renderFinanceiro();
+  toast('✓ Conta variável salva');
+}
+
+async function deleteVariavel(id) {
+  await sb.from('financeiro_variaveis').delete().eq('id', id);
+  document.getElementById('variavelOverlay')?.remove();
+  finVariaveis = finVariaveis.filter(v=>v.id!==id);
+  renderFinanceiro();
+  toast('Conta removida');
+}
+
+async function togglePagoVariavel(id, estaPago) {
+  if (estaPago) {
+    await sb.from('financeiro_variaveis').update({pago:false, data_pagamento:null}).eq('id', id);
+    finVariaveis = finVariaveis.map(v => v.id===id ? {...v, pago:false, data_pagamento:null} : v);
+    renderFinanceiro();
+    toast('Pagamento removido');
+  } else {
+    showMiniModal('✓ Marcar como pago', '', []);
+    document.getElementById('fuMiniSub').innerHTML = `
+      <div style="margin-top:8px">
+        <label style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--text-3);display:block;margin-bottom:4px">Data de pagamento</label>
+        <input type="date" id="dataPagVarInput" value="${new Date().toISOString().split('T')[0]}"
+          style="width:100%;background:rgba(0,0,0,.04);border:1.5px solid var(--border-s);border-radius:8px;padding:9px 12px;font-family:inherit;font-size:13px;outline:none">
+      </div>`;
+    document.getElementById('fuMiniBtns').innerHTML = '';
+    [
+      { label: '✓ Confirmar', cls: 'btn-p', fn: async () => {
+        const data = document.getElementById('dataPagVarInput')?.value || new Date().toISOString().split('T')[0];
+        await sb.from('financeiro_variaveis').update({pago:true, data_pagamento:data}).eq('id', id);
+        finVariaveis = finVariaveis.map(v => v.id===id ? {...v, pago:true, data_pagamento:data} : v);
+        closeMiniModal();
+        renderFinanceiro();
+        toast('✓ Conta marcada como paga');
+      }},
+      { label: 'Cancelar', cls: 'btn-g', fn: closeMiniModal }
+    ].forEach(b => {
+      const el = document.createElement('button');
+      el.className = 'btn ' + b.cls; el.textContent = b.label; el.onclick = b.fn;
+      document.getElementById('fuMiniBtns').appendChild(el);
+    });
   }
 }
 

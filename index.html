@@ -352,6 +352,26 @@ textarea.fc2{resize:none}
 .dup-alert{background:rgba(255,149,0,.1);border:1.5px solid rgba(255,149,0,.3);border-radius:var(--r);padding:10px 14px;font-size:12px;color:#b36200;margin-bottom:12px;display:none;cursor:pointer;transition:var(--t)}
 .dup-alert:hover{background:rgba(255,149,0,.15)}
 .dup-alert.show{display:block}
+/* CICLOS DE FOLLOW-UP */
+.fu-ciclo-badge{display:inline-flex;align-items:center;gap:4px;padding:1px 8px;border-radius:20px;font-size:10px;font-weight:700;margin-bottom:4px}
+.fu-hist-entry{border-left:3px solid;padding:8px 12px;border-radius:0 var(--r-s) var(--r-s) 0;margin-bottom:6px}
+.fu-summary{padding:10px 20px;border-bottom:1px solid var(--border);font-size:12px;color:var(--text-2);line-height:1.6;background:rgba(0,0,0,.015)}
+
+/* MINI MODAL */
+.mini-modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.3);backdrop-filter:blur(6px);z-index:300;display:none;align-items:center;justify-content:center}
+.mini-modal-overlay.open{display:flex;animation:ov-in .15s ease}
+.mini-modal{background:var(--white);border-radius:var(--r-l);padding:24px;width:380px;max-width:95vw;box-shadow:var(--sh-m);animation:m-up .2s cubic-bezier(.16,1,.3,1)}
+.mini-modal-title{font-size:15px;font-weight:700;letter-spacing:-.2px;margin-bottom:6px}
+.mini-modal-sub{font-size:13px;color:var(--text-2);margin-bottom:18px;line-height:1.5}
+.mini-modal-btns{display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap}
+
+/* PLANILHA — HOJE */
+.plan-hoje-btn{background:var(--orange);color:#fff;border:none;border-radius:980px;padding:6px 16px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;transition:var(--t)}
+.plan-hoje-btn:hover{background:#e68900}
+.plan-hoje-btn.ativo{background:var(--accent)}
+.plan-feito-btn{background:var(--green);color:#fff;border:none;border-radius:980px;padding:4px 12px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;transition:var(--t)}
+.plan-feito-btn:hover{opacity:.85}
+
 .sb-hoje{border-top:1px solid var(--border);padding:8px;flex-shrink:0}
 .sb-hoje-title{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text-3);padding:4px 10px 6px}
 .hoje-item{display:flex;align-items:center;gap:8px;padding:7px 10px;border-radius:var(--r-s);cursor:pointer;transition:var(--t)}
@@ -631,6 +651,7 @@ textarea.fc2{resize:none}
 <div class="plan-page" id="planPage">
   <div class="plan-topbar">
     <div class="plan-title">📋 Planilha de Leads</div>
+    <button class="plan-hoje-btn" id="planHojeBtn" onclick="toggleHoje()">⏰ Follow-ups de Hoje</button>
     <span class="plan-count" id="planCount"></span>
     <button class="btn btn-g" style="font-size:12px" onclick="exportCSVFiltered()">↓ Exportar filtrados</button>
     <button class="btn btn-g" style="font-size:12px" onclick="closePlanilha()">✕ Fechar</button>
@@ -699,6 +720,7 @@ textarea.fc2{resize:none}
           <th>Ads Ativos</th>
           <th>Qtd Ads</th>
           <th>Follow-up</th>
+          <th>Feito</th>
           <th>Contatos</th>
           <th>Cadastro</th>
           <th></th>
@@ -748,6 +770,15 @@ textarea.fc2{resize:none}
   </div>
 </div>
 
+<!-- MINI MODAL FOLLOWUP -->
+<div class="mini-modal-overlay" id="fuMiniModal">
+  <div class="mini-modal">
+    <div class="mini-modal-title" id="fuMiniTitle">Follow-up concluído!</div>
+    <div class="mini-modal-sub" id="fuMiniSub"></div>
+    <div class="mini-modal-btns" id="fuMiniBtns"></div>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <script>
@@ -790,6 +821,8 @@ async function loadLeads() {
     cnpj: r.cnpj || null,
     cnpjData: r.cnpj_data || null,
     perfilAvaliacao: r.perfil_avaliacao || null,
+    fuCiclos: r.fu_ciclos || [],
+    fuCicloAtual: r.fu_ciclo_atual ?? 0,
     createdAt: r.created_at
   }));
 }
@@ -805,7 +838,8 @@ async function persistLead(lead) {
     followup_seq: lead.followupSeq??null,
     ads_ativos: lead.adsAtivos||null, ads_count: lead.adsCount||null,
     cnpj: lead.cnpj||null, cnpj_data: lead.cnpjData||null,
-    perfil_avaliacao: lead.perfilAvaliacao||null
+    perfil_avaliacao: lead.perfilAvaliacao||null,
+    fu_ciclos: lead.fuCiclos||[], fu_ciclo_atual: lead.fuCicloAtual??0
   });
   if (error) toast('Erro ao salvar: ' + error.message);
   hideSave();
@@ -1039,13 +1073,27 @@ function renderDetail() {
     <div class="fu-section card">
       <div class="ch">
         <div class="ct"><span class="ct-i">⏰</span> Lembrete de Follow-up</div>
-        ${l.followup ? `<button class="fu-clear" onclick="clearFollowup()">✕ Remover</button>` : ''}
+        <div style="display:flex;gap:6px;align-items:center">
+          ${l.fuCiclos&&l.fuCiclos.length ? `<span style="font-size:11px;color:var(--text-3)">Ciclo ${l.fuCicloAtual+1} · ${l.fuCiclos.length} feito${l.fuCiclos.length!==1?'s':''}</span>` : ''}
+          ${l.followup ? `<button class="fu-clear" onclick="clearFollowup()">✕ Remover</button>` : ''}
+        </div>
       </div>
-      ${l.followup ? `<div class="fu-current"><span>📅 Agendado para <strong>${new Date(l.followup).toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'long'})}</strong></span></div>` : ''}
+      ${l.followup ? `<div class="fu-current"><span>📅 Agendado para <strong>${new Date(l.followup+'T12:00:00').toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'long'})}</strong> · ${getFuLabel(l)}</span></div>` : ''}
       <div class="fu-set-row">
         <input type="date" class="fu-date-in" id="fuDateIn" value="${l.followup||''}" min="${new Date().toISOString().split('T')[0]}">
         <button class="ab" onclick="saveFollowup()">Agendar</button>
       </div>
+      ${l.fuCiclos&&l.fuCiclos.length ? `
+      <div class="fu-summary">
+        ${l.fuCiclos.map((c,i)=>`<span style="color:${fuCicloColor(c.ciclo)};font-weight:600">Ciclo ${c.ciclo+1}</span>: ${c.feitos} follow-up${c.feitos!==1?'s':''} feitos · fase ${c.fase!==undefined?'D+'+(FU_SEQ[c.fase]||'?'):'?'} · até ${new Date(c.data).toLocaleDateString('pt-BR')}`).join('<br>')}
+      </div>
+      <div style="padding:8px 20px 12px">
+        ${l.fuCiclos.slice().reverse().map(c=>`
+          <div class="fu-hist-entry" style="border-color:${fuCicloColor(c.ciclo)}">
+            <div class="fu-ciclo-badge" style="background:${fuCicloColor(c.ciclo)}22;color:${fuCicloColor(c.ciclo)}">Ciclo ${c.ciclo+1}</div>
+            <div style="font-size:11px;color:var(--text-2)">${c.feitos} follow-up${c.feitos!==1?'s':''} · fase D+${FU_SEQ[c.fase]||'?'} · ${new Date(c.data).toLocaleDateString('pt-BR')}</div>
+          </div>`).join('')}
+      </div>` : ''}
     </div>
 
     <div class="card">
@@ -1067,14 +1115,20 @@ function renderDetail() {
       </div>
       <div class="hb" id="histBody">
         ${l.contacts.length
-          ? l.contacts.slice().reverse().map(c => `
-            <div class="he">
-              <div class="hi">${CI[c.channel]||'📱'}</div>
-              <div class="hm">
-                <div class="hd">${fmtDate(c.date)}</div>
-                <div class="ht">${esc(c.text)}</div>
-              </div>
-            </div>`).join('')
+          ? l.contacts.slice().reverse().map(c => {
+              const cor = fuCicloColor(c.ciclo ?? 0);
+              const isFu = c.isFu;
+              return `<div class="he" style="${isFu ? `border-left:3px solid ${cor};padding-left:10px` : ''}">
+                <div class="hi" style="${isFu ? `color:${cor}` : ''}">${CI[c.channel]||'📱'}</div>
+                <div class="hm">
+                  <div class="hd" style="display:flex;gap:6px;align-items:center">
+                    ${fmtDate(c.date)}
+                    ${c.ciclo !== undefined ? `<span style="font-size:9px;font-weight:700;padding:1px 6px;border-radius:20px;background:${cor}22;color:${cor}">Ciclo ${(c.ciclo||0)+1}</span>` : ''}
+                  </div>
+                  <div class="ht">${esc(c.text)}</div>
+                </div>
+              </div>`;
+            }).join('')
           : '<div class="h-emp">Nenhum contato registrado ainda</div>'}
       </div>
       <div class="hir">
@@ -1090,12 +1144,55 @@ function renderDetail() {
 function toggleSD() { document.getElementById('statusDD')?.classList.toggle('open'); }
 document.addEventListener('click', e => { if (!e.target.closest('.smw')) document.getElementById('statusDD')?.classList.remove('open'); });
 
+const FU_SEQ = [1, 3, 7, 14];
+const FU_CICLO_COLORS = ['#007aff','#34c759','#ff9500','#ff3b30','#a855f7','#06b6d4'];
+function fuCicloColor(ciclo) { return FU_CICLO_COLORS[ciclo % FU_CICLO_COLORS.length]; }
+function getFuLabel(l) {
+  const seq = l.followupSeq ?? -1;
+  if (seq < 0) return 'agendado manualmente';
+  return `D+${FU_SEQ[seq]||'?'} do ciclo ${(l.fuCicloAtual||0)+1}`;
+}
+
+function agendarFuSeq(l, seqIdx) {
+  const hoje = new Date();
+  const d = new Date(hoje); d.setDate(hoje.getDate() + FU_SEQ[seqIdx]);
+  l.followup = d.toISOString().split('T')[0];
+  l.followupSeq = seqIdx;
+}
+
 async function changeStatus(s) {
   const l = getLead(curId); if (!l) return;
+  const anterior = l.status;
+
+  // Ao entrar em "contatado" pela primeira vez — agenda D+1
+  if (s === 'contatado' && anterior !== 'contatado' && !l.followup) {
+    agendarFuSeq(l, 0);
+    l.followupSeq = 0;
+    toast('📅 Follow-up D+1 agendado automaticamente!');
+  }
+
+  // Se lead RETROCEDE de status (ex: de proposta para contatado)
+  const idxAnterior = STATUSES.indexOf(anterior);
+  const idxNovo = STATUSES.indexOf(s);
+  const retrocedeu = idxNovo < idxAnterior && anterior !== 'novo';
+
   l.status = s;
   await persistLead(l);
   renderAll(); renderDetail();
   toast(SE[s] + ' ' + SL[s]);
+
+  // Pergunta sobre reinício de ciclo se retrocedeu
+  if (retrocedeu && l.followupSeq !== null && l.followupSeq >= 0) {
+    const feitos = (l.followupSeq ?? 0) + 1;
+    showMiniModal(
+      'Lead retrocedeu de status',
+      `Este lead estava na fase D+${FU_SEQ[l.followupSeq]||'?'} do ciclo ${(l.fuCicloAtual||0)+1} com ${feitos} follow-up${feitos!==1?'s':''} feitos. Deseja reiniciar uma nova sequência de follow-up do zero?`,
+      [
+        { label: '🔄 Sim, novo ciclo', cls: 'btn-p', fn: () => reiniciarCiclo(l.id) },
+        { label: 'Manter atual', cls: 'btn-g', fn: closeMiniModal }
+      ]
+    );
+  }
 }
 
 async function delLead() {
@@ -1115,31 +1212,7 @@ async function saveNotes() {
 async function addContact() {
   const l = getLead(curId), inp = document.getElementById('cIn'), ch = document.getElementById('cCh').value, txt = inp.value.trim();
   if (!l || !txt) return;
-  const isPrimeiro = l.contacts.length === 0;
-  l.contacts.push({ date: new Date().toISOString(), text: txt, channel: ch });
-
-  // Follow-up automático no 1º contato — D+1
-  if (isPrimeiro) {
-    const d1 = new Date(); d1.setDate(d1.getDate() + 1);
-    l.followup = d1.toISOString().split('T')[0];
-    l.followupSeq = 0; // índice da sequência atual
-    toast('📅 Follow-up D+1 agendado automaticamente!');
-  } else {
-    // Avançar sequência se já tem followup
-    const seq = [1, 3, 7, 14];
-    const cur = l.followupSeq ?? -1;
-    const next = cur + 1;
-    if (next < seq.length) {
-      const dn = new Date(); dn.setDate(dn.getDate() + seq[next] - (seq[cur]||0));
-      // calcula dias a partir do 1º contato
-      const firstContact = new Date(l.contacts[0].date);
-      const nextDay = new Date(firstContact); nextDay.setDate(nextDay.getDate() + seq[next]);
-      l.followup = nextDay.toISOString().split('T')[0];
-      l.followupSeq = next;
-      toast(`📅 Follow-up D+${seq[next]} agendado!`);
-    }
-  }
-
+  l.contacts.push({ date: new Date().toISOString(), text: txt, channel: ch, ciclo: l.fuCicloAtual||0 });
   await persistLead(l); inp.value = '';
   renderLeads(); renderDetail(); renderSbHoje();
 }
@@ -1505,25 +1578,40 @@ function getPlanFiltered() {
 }
 
 function renderPlanilha() {
-  const list = getPlanFiltered();
+  let list = getPlanFiltered();
+
+  if (planHojeAtivo) {
+    const hoje = new Date(); hoje.setHours(0,0,0,0);
+    list = list.filter(l => {
+      if (!l.followup) return false;
+      const d = new Date(l.followup + 'T12:00:00'); d.setHours(0,0,0,0);
+      return d <= hoje;
+    }).sort((a,b) => new Date(a.followup) - new Date(b.followup));
+  }
+
   document.getElementById('planCount').textContent = list.length + ' lead' + (list.length!==1?'s':'');
   document.getElementById('planBody').innerHTML = list.length
-    ? list.map(l => `
-      <tr>
-        <td style="font-weight:600;min-width:140px">${esc(l.name)}</td>
-        <td style="color:var(--text-2);min-width:140px">${esc(l.niche)}</td>
-        <td><span class="plan-badge c-${l.status}">${SL[l.status]}</span></td>
-        <td>${l.whatsapp ? `<a class="plan-link" href="https://wa.me/55${l.whatsapp.replace(/\D/g,'')}" target="_blank">${esc(l.whatsapp)}</a>` : '<span style="color:var(--text-3)">—</span>'}</td>
-        <td>${l.instagram ? `<a class="plan-link" href="https://instagram.com/${l.instagram.replace('@','')}" target="_blank">${esc(l.instagram)}</a>` : '<span style="color:var(--text-3)">—</span>'}</td>
-        <td>${CI[l.channel]||''} ${esc(l.channel)}</td>
-        <td>${l.adsAtivos==='sim' ? '<span class="plan-ads-yes">🔴 Sim</span>' : l.adsAtivos==='nao' ? '<span class="plan-ads-no">🟢 Não</span>' : '<span style="color:var(--text-3)">—</span>'}</td>
-        <td style="text-align:center">${l.adsCount||'—'}</td>
-        <td style="white-space:nowrap">${l.followup ? `<span style="font-size:12px;font-weight:600;color:${new Date(l.followup+'T12:00:00')<new Date()?'var(--red)':'var(--accent)'}">${new Date(l.followup+'T12:00:00').toLocaleDateString('pt-BR')}</span>` : '<span style="color:var(--text-3)">—</span>'}</td>
-        <td style="text-align:center">${l.contacts.length}</td>
-        <td style="white-space:nowrap;color:var(--text-3);font-size:12px">${new Date(l.createdAt).toLocaleDateString('pt-BR')}</td>
-        <td><button class="plan-row-btn" onclick="closePlanilha();selectLead('${l.id}');switchView('detail',null)">→</button></td>
-      </tr>`).join('')
-    : `<tr><td colspan="12" class="plan-empty">Nenhum lead com esses filtros</td></tr>`;
+    ? list.map(l => {
+        const fuDate = l.followup ? new Date(l.followup+'T12:00:00') : null;
+        const fuVencido = fuDate && fuDate < new Date();
+        const fuHoje = fuDate && fuDate.toDateString() === new Date().toDateString();
+        return `<tr>
+          <td style="font-weight:600;min-width:140px">${esc(l.name)}</td>
+          <td style="color:var(--text-2);min-width:140px">${esc(l.niche)}</td>
+          <td><span class="plan-badge c-${l.status}">${SL[l.status]}</span></td>
+          <td>${l.whatsapp ? `<a class="plan-link" href="https://wa.me/55${l.whatsapp.replace(/\D/g,'')}" target="_blank">${esc(l.whatsapp)}</a>` : '<span style="color:var(--text-3)">—</span>'}</td>
+          <td>${l.instagram ? `<a class="plan-link" href="https://instagram.com/${l.instagram.replace('@','')}" target="_blank">${esc(l.instagram)}</a>` : '<span style="color:var(--text-3)">—</span>'}</td>
+          <td>${CI[l.channel]||''} ${esc(l.channel)}</td>
+          <td>${l.adsAtivos==='sim' ? '<span class="plan-ads-yes">🔴 Sim</span>' : l.adsAtivos==='nao' ? '<span class="plan-ads-no">🟢 Não</span>' : '<span style="color:var(--text-3)">—</span>'}</td>
+          <td style="text-align:center">${l.adsCount||'—'}</td>
+          <td style="white-space:nowrap">${fuDate ? `<span style="font-size:12px;font-weight:600;color:${fuVencido?'var(--red)':fuHoje?'var(--orange)':'var(--accent)'}">${fuDate.toLocaleDateString('pt-BR')}${fuHoje?' · Hoje':fuVencido?' · Atrasado':''}</span>` : '<span style="color:var(--text-3)">—</span>'}</td>
+          <td>${l.followup ? `<button class="plan-feito-btn" onclick="marcarFuFeito('${l.id}')">✓ Feito</button>` : '<span style="color:var(--text-3)">—</span>'}</td>
+          <td style="text-align:center">${l.contacts.length}</td>
+          <td style="white-space:nowrap;color:var(--text-3);font-size:12px">${new Date(l.createdAt).toLocaleDateString('pt-BR')}</td>
+          <td><button class="plan-row-btn" onclick="closePlanilha();selectLead('${l.id}');switchView('detail',null)">→</button></td>
+        </tr>`;
+      }).join('')
+    : `<tr><td colspan="13" class="plan-empty">${planHojeAtivo ? '🎉 Nenhum follow-up pendente para hoje!' : 'Nenhum lead com esses filtros'}</td></tr>`;
 }
 
 function exportCSVFiltered() {
@@ -1675,6 +1763,124 @@ async function adicionarDaBusca(i) {
 function ignorarDaBusca(i) {
   const card = document.getElementById('bcard-' + i);
   if (card) { card.style.opacity = '0.3'; card.style.pointerEvents = 'none'; }
+}
+
+// ── MINI MODAL ────────────────────────────
+function showMiniModal(title, sub, btns) {
+  document.getElementById('fuMiniTitle').textContent = title;
+  document.getElementById('fuMiniSub').textContent = sub;
+  document.getElementById('fuMiniBtns').innerHTML = '';
+  btns.forEach(b => {
+    const el = document.createElement('button');
+    el.className = 'btn ' + b.cls;
+    el.textContent = b.label;
+    el.onclick = b.fn;
+    document.getElementById('fuMiniBtns').appendChild(el);
+  });
+  document.getElementById('fuMiniModal').classList.add('open');
+}
+function closeMiniModal() { document.getElementById('fuMiniModal').classList.remove('open'); }
+
+// ── CICLOS DE FOLLOW-UP ───────────────────
+async function reiniciarCiclo(id) {
+  closeMiniModal();
+  const l = getLead(id); if (!l) return;
+  // salvar ciclo atual no histórico
+  if (l.followupSeq !== null && l.followupSeq >= 0) {
+    if (!l.fuCiclos) l.fuCiclos = [];
+    l.fuCiclos.push({
+      ciclo: l.fuCicloAtual || 0,
+      feitos: (l.followupSeq ?? 0) + 1,
+      fase: l.followupSeq,
+      data: new Date().toISOString()
+    });
+    l.fuCicloAtual = (l.fuCicloAtual || 0) + 1;
+  }
+  agendarFuSeq(l, 0);
+  l.followupSeq = 0;
+  await persistLead(l);
+  renderAll(); renderDetail();
+  toast('🔄 Novo ciclo de follow-up iniciado — D+1 agendado!');
+}
+
+async function marcarFuFeito(leadId) {
+  const l = getLead(leadId); if (!l) return;
+  const seqAtual = l.followupSeq ?? 0;
+  const proxIdx = seqAtual + 1;
+  const temProx = proxIdx < FU_SEQ.length;
+
+  // registrar no histórico de contatos
+  l.contacts.push({
+    date: new Date().toISOString(),
+    text: `✅ Follow-up D+${FU_SEQ[seqAtual]} concluído (Ciclo ${(l.fuCicloAtual||0)+1})`,
+    channel: l.channel || 'WhatsApp',
+    ciclo: l.fuCicloAtual || 0,
+    isFu: true
+  });
+
+  // remover follow-up atual temporariamente
+  l.followup = null;
+
+  await persistLead(l);
+  renderAll(); renderDetail(); renderSbHoje();
+  if (planHojeAtivo) renderPlanilha();
+  closeMiniModal();
+
+  // Perguntar se quer agendar próximo
+  if (temProx) {
+    const proxDias = FU_SEQ[proxIdx];
+    showMiniModal(
+      '✅ Follow-up concluído!',
+      `Deseja agendar o próximo follow-up? D+${proxDias} (${calcDataFu(proxDias)})`,
+      [
+        { label: `📅 Sim, agendar D+${proxDias}`, cls: 'btn-p', fn: async () => {
+          agendarFuSeq(l, proxIdx);
+          l.followupSeq = proxIdx;
+          await persistLead(l);
+          renderAll(); renderDetail(); renderSbHoje();
+          closeMiniModal();
+          toast(`📅 Follow-up D+${proxDias} agendado!`);
+        }},
+        { label: 'Não, deixar sem agendamento', cls: 'btn-g', fn: closeMiniModal }
+      ]
+    );
+  } else {
+    // Sequência completa
+    if (!l.fuCiclos) l.fuCiclos = [];
+    l.fuCiclos.push({
+      ciclo: l.fuCicloAtual || 0,
+      feitos: FU_SEQ.length,
+      fase: seqAtual,
+      data: new Date().toISOString()
+    });
+    l.fuCicloAtual = (l.fuCicloAtual || 0) + 1;
+    l.followupSeq = null;
+    await persistLead(l);
+    showMiniModal(
+      '🎉 Sequência completa!',
+      'Todos os follow-ups do ciclo foram feitos (D+1, D+3, D+7, D+14). Deseja iniciar um novo ciclo do zero?',
+      [
+        { label: '🔄 Novo ciclo', cls: 'btn-p', fn: () => reiniciarCiclo(leadId) },
+        { label: 'Encerrar sequência', cls: 'btn-g', fn: closeMiniModal }
+      ]
+    );
+  }
+}
+
+function calcDataFu(dias) {
+  const d = new Date(); d.setDate(d.getDate() + dias);
+  return d.toLocaleDateString('pt-BR', { day:'2-digit', month:'short' });
+}
+
+// ── PLANILHA HOJE ─────────────────────────
+let planHojeAtivo = false;
+
+function toggleHoje() {
+  planHojeAtivo = !planHojeAtivo;
+  const btn = document.getElementById('planHojeBtn');
+  btn.classList.toggle('ativo', planHojeAtivo);
+  btn.textContent = planHojeAtivo ? '✕ Ver todos' : '⏰ Follow-ups de Hoje';
+  renderPlanilha();
 }
 
 // ── FOLLOW-UP ─────────────────────────────

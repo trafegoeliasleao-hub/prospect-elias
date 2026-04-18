@@ -287,10 +287,28 @@ window.onload = async () => {
   currentUser = session.user;
 
   // Verificar se é admin
-  const { data: profile } = await sb.from('user_profiles')
-    .select('role,name').eq('id', currentUser.id).single();
+  // Verificar se é admin com maybeSingle para não quebrar com RLS
+  const { data: profile, error: profileErr } = await sb.from('user_profiles')
+    .select('role,name').eq('id', currentUser.id).maybeSingle();
 
-  if (!profile || profile.role !== 'admin') {
+  // Se não conseguiu ler o perfil, tenta pelo email
+  if (!profile || profileErr) {
+    const { data: profileByEmail } = await sb.from('user_profiles')
+      .select('role,name').eq('email', currentUser.email).maybeSingle();
+    
+    if (!profileByEmail || profileByEmail.role !== 'admin') {
+      window.location.href = 'app.html';
+      return;
+    }
+    
+    const name = profileByEmail.name || currentUser.email.split('@')[0];
+    document.getElementById('adminAvatar').textContent = name[0].toUpperCase();
+    document.getElementById('adminEmail').textContent = currentUser.email;
+    await Promise.all([loadUsers(), loadApiKeys(), loadLogs()]);
+    return;
+  }
+
+  if (profile.role !== 'admin') {
     window.location.href = 'app.html';
     return;
   }

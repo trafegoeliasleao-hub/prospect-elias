@@ -737,6 +737,7 @@ textarea.fc2{resize:none}
         <button class="vb" onclick="switchView('dash',this)">📊 Dashboard</button>
         <button class="vb" onclick="switchView('clientes',this)">🤝 Clientes</button>
         <button class="vb" id="btnFinanceiro" onclick="switchView('financeiro',this)">💰 Financeiro</button>
+        <button class="vb" onclick="switchView('gestao',this)">📋 Gestão</button>
         <button class="vb" onclick="switchView('busca',this)">🔍 Buscar</button>
       </div>
       <span id="countLbl" style="font-size:12px;color:var(--text-3);font-weight:500"></span>
@@ -824,6 +825,10 @@ textarea.fc2{resize:none}
 
     <div class="view" id="view-kanban">
       <div class="kanban" id="kanbanBoard"></div>
+    </div>
+
+    <div class="view" id="view-gestao">
+      <div id="gestaoWrap" style="height:100%;overflow-y:auto;padding:20px"></div>
     </div>
 
     <div class="view" id="view-busca">
@@ -1086,7 +1091,7 @@ window.onload = async () => {
   const { data: { session } } = await sb.auth.getSession();
   if (!session) { window.location.href = 'index.html'; return; }
 
-  await Promise.all([loadLeads(), loadClientes(), loadFinanceiro(), loadPagamentosClientes()]);
+  await Promise.all([loadLeads(), loadClientes(), loadFinanceiro(), loadPagamentosClientes(), loadGestao()]);
 
   // Sincronizar clientes sem lead automaticamente (silencioso)
   const semLead = clientes.filter(c => !c.lead_id);
@@ -2967,7 +2972,10 @@ async function saveCliente() {
   } else {
     // Novo cliente — verificar duplicata antes de criar lead
     const { data: inserted } = await sb.from('clientes_ativos').insert(payload).select().single();
-    if (inserted) await criarLeadParaCliente(inserted);
+    if (inserted) {
+      await criarLeadParaCliente(inserted);
+      await criarLinhaGestao(inserted.id);
+    }
   }
 
   document.getElementById('clienteOverlay')?.remove();
@@ -3137,6 +3145,10 @@ async function saveClienteConvertido(leadId) {
   const l = getLead(leadId);
   if (l) { l.status = 'ativo'; await persistLead(l); }
 
+  // Criar linha na gestão
+  const { data: novoCliente } = await sb.from('clientes_ativos').select('id').eq('lead_id', leadId).maybeSingle();
+  if (novoCliente) await criarLinhaGestao(novoCliente.id);
+
   document.getElementById('clienteOverlay')?.remove();
   await loadClientes();
   renderAll();
@@ -3209,21 +3221,49 @@ async function deleteCliente(id) {
 }
 
 // ── FINANCEIRO ────────────────────────────
-let finCustos = [], finMeses = [], finPagamentos = [], finVariaveis = [];
+let finCustos = [], finMeses = [], finPagamentos = [], finVariaveis = [], finCustosMes = [], finCartao = [];
 let mesVizualizado = new Date().toISOString().slice(0,7);
 const mesAtualFin = new Date().toISOString().slice(0,7);
 
 async function loadFinanceiro() {
-  const [rc, rm, rp, rv] = await Promise.all([
+  const [rc, rm, rp, rv, rcm, rct] = await Promise.all([
     sb.from('financeiro_custos').select('*').order('categoria'),
     sb.from('financeiro_meses').select('*').order('mes', {ascending:false}).limit(24),
     sb.from('financeiro_pagamentos_custos').select('*').eq('mes', mesVizualizado),
-    sb.from('financeiro_variaveis').select('*').eq('mes', mesVizualizado).order('created_at')
+    sb.from('financeiro_variaveis').select('*').eq('mes', mesVizualizado).order('created_at'),
+    sb.from('financeiro_custos_mes').select('*').eq('mes', mesVizualizado),
+    sb.from('cartao_compras').select('*').order('data_compra', {ascending:false})
   ]);
   finCustos = rc.data || [];
   finMeses = rm.data || [];
   finPagamentos = rp.data || [];
   finVariaveis = rv.data || [];
+  finCustosMes = rcm.data || [];
+  finCartao = rct.data || [];
+}
+
+// Retorna custos do mês atual — filtrando os marcados como ignorados
+function getCustosDoMes() {
+  const ignorados = new Set(finCustosMes.filter(m=>m.ignorado).map(m=>m.custo_id));
+  return finCustos.filter(c=>c.ativo && !ignorados.has(c.id));
+}
+
+// Retorna parcelas do cartão que vencem no mês visualizado
+function getParcelasDoMes() {
+  const parcelas = [];
+  const [ano, mes] = mesVizualizado.split('-').map(Number);
+  for (const c of finCartao) {
+    if (!c.data_primeiro_pagamento || !c.qtd_parcelas) continue;
+    const [ap, mp] = c.data_primeiro_pagamento.split('-').map(Number);
+    for (let i = 0; i < c.qtd_parcelas; i++) {
+      const d = new Date(ap, mp - 1 + i, 1);
+      if (d.getFullYear() === ano && d.getMonth() + 1 === mes) {
+        parcelas.push({...c, parcela_num: i+1, mes_parcela: mesVizualizado});
+        break;
+      }
+    }
+  }
+  return parcelas;
 }
 
 async function ofertarPreviaManual() {
@@ -3372,8 +3412,11 @@ function getMesesNav() {
 
 function renderFinanceiro() {
   const wrap = document.getElementById('finWrap');
-  const totalCustos = finCustos.filter(c=>c.ativo&&c.recorrente).reduce((s,c)=>s+Number(c.valor),0);
+  const custosDoMes = getCustosDoMes();
+  const parcelasDoMes = getParcelasDoMes();
+  const totalCustos = custosDoMes.reduce((s,c)=>s+Number(c.valor),0);
   const totalVariaveis = finVariaveis.reduce((s,v)=>s+Number(v.valor),0);
+  const totalCartao = parcelasDoMes.reduce((s,p)=>s+Number(p.valor_parcela||0),0);
   const ativosContrato = clientes.filter(c=>c.status_contrato==='ativo');
 
   let receitaRecebida = 0, receitaPrevista = 0, receitaAtrasada = 0;
@@ -3392,7 +3435,7 @@ function renderFinanceiro() {
     }
   });
 
-  const lucro = receitaRecebida - totalCustos - totalVariaveis;
+  const lucro = receitaRecebida - totalCustos - totalVariaveis - totalCartao;
   const custosPagos = finPagamentos.filter(p=>!p.ignorado).reduce((s,p)=>s+Number(p.valor_pago||0),0);
   const variaveisPagas = finVariaveis.filter(v=>v.pago).reduce((s,v)=>s+Number(v.valor),0);
   const totalPago = custosPagos + variaveisPagas;
@@ -3503,28 +3546,53 @@ function renderFinanceiro() {
           <button class="btn btn-p btn-sm" onclick="openCustoModal()">+ Adicionar</button>
         </div>
         <div id="custosLista">
-          ${finCustos.length ? finCustos.map(c => {
-            const pag = finPagamentos.find(p => p.custo_id === c.id);
+          ${custosDoMes.length ? custosDoMes.map(c => {
+            const pag = finPagamentos.find(p => p.custo_id === c.id && !p.ignorado);
             const pago = !!pag;
             return `
-            <div class="custo-row ${!c.ativo?'custo-inactive':''}">
-              <div style="display:flex;align-items:center;gap:10px;flex:1;min-width:0;cursor:${c.ativo?'pointer':'default'}" onclick="${c.ativo?`togglePagoCusto('${c.id}',${pago})`:''}">
+            <div class="custo-row">
+              <div style="display:flex;align-items:center;gap:10px;flex:1;min-width:0;cursor:pointer" onclick="togglePagoCusto('${c.id}',${pago})">
                 <div style="width:22px;height:22px;border-radius:50%;border:2px solid ${pago?'var(--green)':'var(--border-s)'};background:${pago?'var(--green)':'transparent'};display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:var(--t)">
                   ${pago?'<svg width="10" height="8" viewBox="0 0 10 8" fill="none"><path d="M1 4l3 3 5-6" stroke="#fff" stroke-width="1.8" stroke-linecap="round"/></svg>':''}
                 </div>
                 <div>
                   <div class="custo-nome" style="${pago?'text-decoration:line-through;color:var(--text-3)':''}">${esc(c.nome)}</div>
-                  <div class="custo-cat">${c.categoria}${c.dia_vencimento?` · vence dia ${c.dia_vencimento}`:''}${pago&&pag.data_pagamento?` · pago em ${new Date(pag.data_pagamento+'T12:00:00').toLocaleDateString('pt-BR')}`:!c.ativo?' · inativo':pago?'':' · clique para marcar pago'}</div>
+                  <div class="custo-cat">${c.categoria||''}${c.dia_vencimento?` · vence dia ${c.dia_vencimento}`:''}${pago&&pag.data_pagamento?` · pago em ${new Date(pag.data_pagamento+'T12:00:00').toLocaleDateString('pt-BR')}`:pago?'':' · clique para marcar pago'}</div>
                 </div>
               </div>
               <div class="custo-val" style="${pago?'color:var(--green)':''}">${fmtMoeda(c.valor)}</div>
               <div style="display:flex;gap:4px">
-                ${c.ativo&&!pago?`<button class="btn btn-p btn-sm" onclick="marcarCustoPago('${c.id}','${c.valor}')">✓ Pago</button>`:''}
-                ${c.ativo&&pago?`<button class="btn btn-g btn-sm" onclick="togglePagoCusto('${c.id}',true)" style="color:var(--red)">✕</button>`:''}
+                ${!pago?`<button class="btn btn-p btn-sm" onclick="marcarCustoPago('${c.id}','${c.valor}')">✓ Pago</button>`:''}
+                ${pago?`<button class="btn btn-g btn-sm" onclick="togglePagoCusto('${c.id}',true)" style="color:var(--red)">✕</button>`:''}
                 <button class="btn btn-g btn-sm" onclick="openCustoModal('${c.id}')">✏️</button>
               </div>
             </div>`}).join('')
             : '<div class="h-emp">Nenhum custo cadastrado</div>'}
+        </div>
+      </div>
+
+      <!-- CARTÃO DE CRÉDITO -->
+      <div class="card">
+        <div class="ch">
+          <div class="ct"><span class="ct-i">💳</span> Cartão de Crédito</div>
+          <button class="btn btn-p btn-sm" onclick="openCartaoModal()">+ Compra</button>
+        </div>
+        <div>
+          ${parcelasDoMes.length ? parcelasDoMes.map(p => `
+            <div class="custo-row">
+              <div style="flex:1;min-width:0">
+                <div class="custo-nome">${esc(p.descricao)}</div>
+                <div class="custo-cat">Parcela ${p.parcela_num}/${p.qtd_parcelas} · compra em ${p.data_compra?new Date(p.data_compra+'T12:00:00').toLocaleDateString('pt-BR'):'—'}</div>
+              </div>
+              <div class="custo-val">${fmtMoeda(p.valor_parcela)}</div>
+              <button class="btn btn-g btn-sm" onclick="openCartaoModal('${p.id}')">✏️</button>
+              <button class="btn btn-g btn-sm" style="color:var(--red)" onclick="deleteCartao('${p.id}')">🗑</button>
+            </div>`).join('')
+          : '<div class="h-emp">Nenhuma parcela neste mês</div>'}
+          ${finCartao.length ? `
+          <div style="padding:8px 20px;border-top:1px solid var(--border)">
+            <button class="btn btn-g btn-sm" onclick="verTodasCompras()" style="font-size:11px">Ver todas as compras (${finCartao.length})</button>
+          </div>` : ''}
         </div>
       </div>
 
@@ -3798,6 +3866,116 @@ async function togglePagoVariavel(id, estaPago) {
   }
 }
 
+// ── CARTÃO DE CRÉDITO ─────────────────────
+function openCartaoModal(id = null) {
+  const c = id ? finCartao.find(x=>x.id===id) : null;
+  const overlay = document.createElement('div');
+  overlay.className = 'overlay open';
+  overlay.id = 'cartaoOverlay';
+  overlay.onclick = e => { if(e.target===overlay) overlay.remove(); };
+  overlay.innerHTML = `
+    <div class="modal">
+      <div class="m-drag"></div>
+      <div class="mt">${c?'Editar Compra':'Nova Compra no Cartão'}</div>
+      <div class="fg"><label class="fl">Descrição</label><input class="fc2" id="ct-desc" value="${esc(c?.descricao||'')}" placeholder="Ex: iPhone 16, Notebook..."></div>
+      <div class="fr">
+        <div class="fg"><label class="fl">Valor total (R$)</label><input class="fc2" id="ct-total" type="number" value="${c?.valor_total||''}" placeholder="0,00" oninput="calcParcelamento()"></div>
+        <div class="fg"><label class="fl">Qtd parcelas</label><input class="fc2" id="ct-parc" type="number" min="1" max="48" value="${c?.qtd_parcelas||1}" oninput="calcParcelamento()"></div>
+      </div>
+      <div class="fg">
+        <label class="fl">Valor da parcela</label>
+        <input class="fc2" id="ct-val-parc" type="number" value="${c?.valor_parcela||''}" placeholder="Calculado automaticamente">
+        <div id="ct-preview" style="font-size:11px;color:var(--text-3);margin-top:4px"></div>
+      </div>
+      <div class="fr">
+        <div class="fg"><label class="fl">Data da compra</label><input class="fc2" id="ct-data" type="date" value="${c?.data_compra||new Date().toISOString().split('T')[0]}"></div>
+        <div class="fg"><label class="fl">1º pagamento</label><input class="fc2" id="ct-prim" type="date" value="${c?.data_primeiro_pagamento||''}" placeholder="Mês que começa a pagar"></div>
+      </div>
+      <div class="fg"><label class="fl">Observação</label><input class="fc2" id="ct-obs" value="${esc(c?.obs||'')}" placeholder="Opcional"></div>
+      <div class="mf">
+        <button class="btn btn-g" onclick="document.getElementById('cartaoOverlay').remove()">Cancelar</button>
+        ${c?`<button class="btn btn-red" onclick="deleteCartao('${c.id}')">Excluir</button>`:''}
+        <button class="btn btn-p" onclick="saveCartao('${id||''}')">Salvar</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  if (!c) calcParcelamento();
+}
+
+function calcParcelamento() {
+  const total = parseFloat(document.getElementById('ct-total')?.value)||0;
+  const parc = parseInt(document.getElementById('ct-prim')?.value)||parseInt(document.getElementById('ct-parc')?.value)||1;
+  const qtd = parseInt(document.getElementById('ct-parc')?.value)||1;
+  if (total && qtd) {
+    const valParc = Math.round(total/qtd*100)/100;
+    const el = document.getElementById('ct-val-parc');
+    if (el && !el.value) el.value = valParc;
+    const prev = document.getElementById('ct-preview');
+    if (prev) prev.textContent = `${qtd}x de ${fmtMoeda(valParc)} = ${fmtMoeda(valParc*qtd)}`;
+  }
+}
+
+async function saveCartao(id) {
+  const total = parseFloat(document.getElementById('ct-total')?.value)||0;
+  const qtd = parseInt(document.getElementById('ct-parc')?.value)||1;
+  const valParc = parseFloat(document.getElementById('ct-val-parc')?.value)||(total/qtd);
+  const payload = {
+    descricao: document.getElementById('ct-desc').value.trim(),
+    valor_total: total||valParc*qtd,
+    valor_parcela: valParc,
+    qtd_parcelas: qtd,
+    data_compra: document.getElementById('ct-data').value||null,
+    data_primeiro_pagamento: document.getElementById('ct-prim').value||null,
+    obs: document.getElementById('ct-obs').value.trim(),
+  };
+  if (!payload.descricao) { toast('Descrição é obrigatória'); return; }
+  if (!payload.data_primeiro_pagamento) { toast('Informe o mês do 1º pagamento'); return; }
+  if (id) {
+    await sb.from('cartao_compras').update(payload).eq('id', id);
+  } else {
+    await sb.from('cartao_compras').insert(payload);
+  }
+  document.getElementById('cartaoOverlay')?.remove();
+  const { data } = await sb.from('cartao_compras').select('*').order('data_compra', {ascending:false});
+  finCartao = data || [];
+  renderFinanceiro();
+  toast('✓ Compra salva');
+}
+
+async function deleteCartao(id) {
+  await sb.from('cartao_compras').delete().eq('id', id);
+  document.getElementById('cartaoOverlay')?.remove();
+  finCartao = finCartao.filter(c=>c.id!==id);
+  renderFinanceiro();
+  toast('Compra removida');
+}
+
+function verTodasCompras() {
+  const overlay = document.createElement('div');
+  overlay.className = 'overlay open';
+  overlay.id = 'todasComprasOverlay';
+  overlay.onclick = e => { if(e.target===overlay) overlay.remove(); };
+  overlay.innerHTML = `
+    <div class="modal" style="max-height:85vh;overflow-y:auto">
+      <div class="m-drag"></div>
+      <div class="mt">💳 Todas as compras no cartão</div>
+      ${finCartao.map(c => {
+        const pagas = c.pago_ate||0;
+        const restantes = (c.qtd_parcelas||1) - pagas;
+        const totalRestante = restantes * Number(c.valor_parcela||0);
+        return `<div class="custo-row">
+          <div style="flex:1;min-width:0">
+            <div class="custo-nome">${esc(c.descricao)}</div>
+            <div class="custo-cat">${pagas}/${c.qtd_parcelas} parcelas · ${fmtMoeda(c.valor_parcela)}/mês · restam ${fmtMoeda(totalRestante)}</div>
+          </div>
+          <button class="btn btn-g btn-sm" onclick="document.getElementById('todasComprasOverlay').remove();openCartaoModal('${c.id}')">✏️</button>
+        </div>`;
+      }).join('')}
+      <div class="mf"><button class="btn btn-g" onclick="document.getElementById('todasComprasOverlay').remove()">Fechar</button></div>
+    </div>`;
+  document.body.appendChild(overlay);
+}
+
 function openCustoModal(id = null) {
   const c = id ? finCustos.find(x=>x.id===id) : null;
   const overlay = document.createElement('div');
@@ -3855,11 +4033,36 @@ async function saveCusto(id) {
 }
 
 async function deleteCusto(id) {
-  if (!confirm('Excluir este custo?')) return;
-  await sb.from('financeiro_custos').delete().eq('id', id);
   document.getElementById('custoOverlay')?.remove();
-  await loadFinanceiro();
-  renderFinanceiro();
+  const custo = finCustos.find(c=>c.id===id);
+  if (!custo) return;
+  showMiniModal(
+    `🗑 Excluir "${custo.nome}"`,
+    'Deseja excluir apenas neste mês ou permanentemente de todos os meses?',
+    [
+      { label: `Só de ${getMesLabel(mesVizualizado)}`, cls: 'btn-g', fn: async () => {
+        closeMiniModal();
+        // Inserir registro de ignorado para este mês
+        await sb.from('financeiro_custos_mes').upsert({
+          custo_id: id, mes: mesVizualizado,
+          nome: custo.nome, categoria: custo.categoria,
+          valor: custo.valor, dia_vencimento: custo.dia_vencimento,
+          ignorado: true
+        }, {onConflict:'custo_id,mes'});
+        await loadFinanceiro();
+        renderFinanceiro();
+        toast(`✓ Removido só de ${getMesLabel(mesVizualizado)}`);
+      }},
+      { label: 'Excluir permanentemente', cls: 'btn-red', fn: async () => {
+        closeMiniModal();
+        await sb.from('financeiro_custos').delete().eq('id', id);
+        await loadFinanceiro();
+        renderFinanceiro();
+        toast('Custo excluído permanentemente');
+      }},
+      { label: 'Cancelar', cls: 'btn-g', fn: closeMiniModal }
+    ]
+  );
 }
 
 async function toggleCusto(id, ativo) {
@@ -3922,6 +4125,119 @@ function switchView(v, btn) {
   if (v==='dash') renderDash();
   if (v==='clientes') renderClientes();
   if (v==='financeiro') renderFinanceiro();
+  if (v==='gestao') renderGestao();
+}
+
+// ── GESTÃO DE CLIENTES ────────────────────
+let gestaoData = [];
+
+async function loadGestao() {
+  const { data } = await sb.from('gestao_clientes').select('*');
+  gestaoData = data || [];
+}
+
+async function criarLinhaGestao(clienteId) {
+  const existe = gestaoData.find(g=>g.cliente_id===clienteId);
+  if (existe) return;
+  const { data } = await sb.from('gestao_clientes').insert({cliente_id: clienteId}).select().single();
+  if (data) gestaoData.push(data);
+}
+
+function renderGestao() {
+  const wrap = document.getElementById('gestaoWrap');
+  if (!wrap) return;
+
+  const lista = clientes.filter(c=>c.status_contrato==='ativo').map(c => {
+    const g = gestaoData.find(x=>x.cliente_id===c.id) || {};
+    const pag = pagamentosClientes.find(p=>p.cliente_id===c.id);
+    const st = calcStatusCliente(c);
+    const stColor = pag?.status==='pago'?'var(--green)':st==='atrasado'?'var(--red)':'var(--orange)';
+    const stLabel = pag?.status==='pago'?'✓ Recebido':st==='atrasado'?'⚠ Atrasado':'⏳ Previsto';
+    return {c, g, stColor, stLabel};
+  });
+
+  wrap.innerHTML = `
+    <div style="max-width:1200px;margin:0 auto">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:10px">
+        <div>
+          <div style="font-size:22px;font-weight:700;letter-spacing:-.4px">📋 Gestão de Clientes</div>
+          <div style="font-size:13px;color:var(--text-2);margin-top:2px">${lista.length} clientes ativos</div>
+        </div>
+      </div>
+
+      ${lista.length === 0 ? `<div class="empty-s"><div class="es-icon">📋</div><div class="es-title">Nenhum cliente ativo</div></div>` : `
+      <div style="display:flex;flex-direction:column;gap:12px">
+        ${lista.map(({c, g, stColor, stLabel}) => `
+          <div class="card" style="padding:0;overflow:hidden">
+            <!-- Cabeçalho do cliente -->
+            <div style="display:flex;align-items:center;gap:12px;padding:14px 18px;border-bottom:1px solid var(--border);background:rgba(0,0,0,.02)">
+              <div style="flex:1;min-width:0">
+                <div style="font-weight:700;font-size:14px">${esc(c.name)}</div>
+                <div style="font-size:11px;color:var(--text-3)">${esc(c.niche||'')}${c.instagram?` · ${esc(c.instagram)}`:''}</div>
+              </div>
+              <span style="font-size:11px;font-weight:600;padding:3px 10px;border-radius:980px;background:${stColor}22;color:${stColor}">${stLabel}</span>
+              ${currentUserRole==='admin'?`<span style="font-size:12px;font-weight:700;color:var(--accent)">${fmtMoeda(c.valor_contrato)}/mês</span>`:''}
+            </div>
+
+            <!-- Campos editáveis -->
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:0;padding:0">
+              ${[
+                {label:'Verba mensal (R$)', key:'verba_mensal', type:'number', val: g.verba_mensal||'', ph:'Ex: 2400'},
+                {label:'Tipo de venda', key:'tipo_venda', type:'select', val: g.tipo_venda||'', opts:['Vendas/msg','Vendas','Reconhecimento','Leads','Crescimento de base','Lançamento']},
+                {label:'Interesse c/ Tráfego', key:'interesse_trafego', type:'text', val: g.interesse_trafego||'', ph:'Ex: Aumentar vendas'},
+                {label:'CPL ideal', key:'cpl_ideal', type:'text', val: g.cpl_ideal||'', ph:'Ex: Até R$ 3,50'},
+              ].map(f => `
+                <div style="padding:10px 16px;border-right:1px solid var(--border);border-bottom:1px solid var(--border)">
+                  <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text-3);margin-bottom:4px">${f.label}</div>
+                  ${f.type==='select'
+                    ? `<select style="width:100%;background:none;border:none;font-family:inherit;font-size:13px;color:var(--text);outline:none;cursor:pointer" onchange="saveGestaoField('${c.id}','${f.key}',this.value)">
+                        <option value="">Selecione...</option>
+                        ${f.opts.map(o=>`<option value="${o}" ${f.val===o?'selected':''}>${o}</option>`).join('')}
+                      </select>`
+                    : `<input type="${f.type}" value="${esc(String(f.val))}" placeholder="${f.ph||''}"
+                        style="width:100%;background:none;border:none;font-family:inherit;font-size:13px;color:var(--text);outline:none"
+                        onblur="saveGestaoField('${c.id}','${f.key}',this.value)"
+                        onkeydown="if(event.key==='Enter')this.blur()">`
+                  }
+                </div>`).join('')}
+              <!-- Links -->
+              <div style="padding:10px 16px;border-right:1px solid var(--border);border-bottom:1px solid var(--border)">
+                <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text-3);margin-bottom:4px">Planilha de Conteúdo</div>
+                <div style="display:flex;align-items:center;gap:6px">
+                  ${g.link_conteudo?`<a href="${esc(g.link_conteudo)}" target="_blank" style="font-size:12px;color:var(--accent);text-decoration:none">🔗 Abrir</a>·`:''}
+                  <input value="${esc(g.link_conteudo||'')}" placeholder="Cole o link..."
+                    style="flex:1;background:none;border:none;font-family:inherit;font-size:12px;color:var(--text-2);outline:none"
+                    onblur="saveGestaoField('${c.id}','link_conteudo',this.value)"
+                    onkeydown="if(event.key==='Enter')this.blur()">
+                </div>
+              </div>
+              <div style="padding:10px 16px;border-bottom:1px solid var(--border)">
+                <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text-3);margin-bottom:4px">Planilha de Resultados</div>
+                <div style="display:flex;align-items:center;gap:6px">
+                  ${g.link_resultados?`<a href="${esc(g.link_resultados)}" target="_blank" style="font-size:12px;color:var(--accent);text-decoration:none">🔗 Abrir</a>·`:''}
+                  <input value="${esc(g.link_resultados||'')}" placeholder="Cole o link..."
+                    style="flex:1;background:none;border:none;font-family:inherit;font-size:12px;color:var(--text-2);outline:none"
+                    onblur="saveGestaoField('${c.id}','link_resultados',this.value)"
+                    onkeydown="if(event.key==='Enter')this.blur()">
+                </div>
+              </div>
+            </div>
+          </div>`).join('')}
+      </div>`}
+    </div>`;
+}
+
+async function saveGestaoField(clienteId, campo, valor) {
+  const existe = gestaoData.find(g=>g.cliente_id===clienteId);
+  const payload = {cliente_id: clienteId, [campo]: valor||null, updated_at: new Date().toISOString()};
+  if (existe) {
+    await sb.from('gestao_clientes').update(payload).eq('cliente_id', clienteId);
+    Object.assign(existe, payload);
+  } else {
+    const { data } = await sb.from('gestao_clientes').insert(payload).select().single();
+    if (data) gestaoData.push(data);
+  }
+  toast('✓ Salvo');
 }
 
 // ── FU FILTROS ────────────────────────────

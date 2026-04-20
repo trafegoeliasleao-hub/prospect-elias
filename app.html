@@ -736,7 +736,7 @@ textarea.fc2{resize:none}
         <button class="vb" onclick="switchView('kanban',this)">Funil</button>
         <button class="vb" onclick="switchView('dash',this)">📊 Dashboard</button>
         <button class="vb" onclick="switchView('clientes',this)">🤝 Clientes</button>
-        <button class="vb" onclick="switchView('financeiro',this)">💰 Financeiro</button>
+        <button class="vb" id="btnFinanceiro" onclick="switchView('financeiro',this)">💰 Financeiro</button>
         <button class="vb" onclick="switchView('busca',this)">🔍 Buscar</button>
       </div>
       <span id="countLbl" style="font-size:12px;color:var(--text-3);font-weight:500"></span>
@@ -1109,6 +1109,15 @@ window.onload = async () => {
       `<a href="admin.html" class="btn btn-g" style="font-size:12px">⚙️ <span class="btn-label-desktop">Admin</span></a>`;
   }
 
+  // Permissões por role
+  if (currentUserRole !== 'admin') {
+    // Ocultar aba Financeiro
+    const btnFin = document.getElementById('btnFinanceiro');
+    if (btnFin) btnFin.style.display = 'none';
+    // Ocultar botão CSV (dados sensíveis)
+    document.querySelectorAll('.btn-csv-admin').forEach(b => b.style.display = 'none');
+  }
+
   document.getElementById('loadingScreen').style.display = 'none';
   document.getElementById('appRoot').style.display = 'grid';
   renderAll();
@@ -1199,10 +1208,15 @@ function renderFilters() {
 function setFilter(f) { curFilter = f; renderFilters(); renderLeads(); closeSidebarMobile(); }
 
 function renderLeads() {
-  const q = document.getElementById('searchInput').value.toLowerCase();
+  const q = document.getElementById('searchInput').value.toLowerCase().replace('@','');
   const list = leads.filter(l =>
     (curFilter === 'todos' || l.status === curFilter) &&
-    (!q || l.name.toLowerCase().includes(q) || l.niche.toLowerCase().includes(q))
+    (!q ||
+      l.name.toLowerCase().includes(q) ||
+      l.niche.toLowerCase().includes(q) ||
+      (l.instagram||'').toLowerCase().replace('@','').includes(q) ||
+      (l.whatsapp||'').replace(/\D/g,'').includes(q.replace(/\D/g,''))
+    )
   );
   document.getElementById('countLbl').textContent = list.length + ' lead' + (list.length!==1?'s':'');
   document.getElementById('leadList').innerHTML = list.length
@@ -1343,7 +1357,10 @@ function renderDetail() {
     <div class="card">
       <div class="ch">
         <div class="ct"><span class="ct-i">🏢</span> CNPJ e Dados da Empresa</div>
-        ${l.instagram||l.name ? `<button class="btn btn-g" style="font-size:12px;padding:6px 14px" onclick="buscarCNPJ()">🔍 Buscar CNPJ</button>` : ''}
+        <div style="display:flex;gap:6px">
+          ${l.cnpj ? `<button class="btn btn-g" style="font-size:12px;padding:6px 14px;color:var(--red)" onclick="limparCNPJ()">✕ Limpar</button>` : ''}
+          ${l.instagram||l.name ? `<button class="btn btn-g" style="font-size:12px;padding:6px 14px" onclick="buscarCNPJ()">🔍 Buscar CNPJ</button>` : ''}
+        </div>
       </div>
       <div class="cnpj-row">
         <input class="cnpj-in" id="cnpjIn" placeholder="00.000.000/0001-00" value="${l.cnpj ? fmtCNPJDisplay(l.cnpj) : ''}" oninput="fmtCNPJInput(this)">
@@ -1711,13 +1728,24 @@ function fmtCNPJDisplay(cnpj) {
   return v.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/,'$1.$2.$3/$4-$5');
 }
 
+async function limparCNPJ() {
+  const l = getLead(curId); if (!l) return;
+  if (!confirm('Limpar os dados do CNPJ deste lead?')) return;
+  l.cnpj = null; l.cnpjData = null;
+  await persistLead(l);
+  renderDetail();
+  toast('✓ CNPJ limpo');
+}
+
 function buscarCNPJ() {
   const l = getLead(curId); if (!l) return;
-  const q = (l.instagram||'').replace('@','') || l.name || '';
-  window.open(`https://www.google.com/search?q=${encodeURIComponent(q+' CNPJ')}`, '_blank');
-  window.open(`https://www.google.com/maps/search/${encodeURIComponent(l.name||q)}`, '_blank');
-  window.open('https://servicos.receita.fazenda.gov.br/Servicos/cnpjreva/Cnpjreva_Solicitacao.asp', '_blank');
-  toast('🔍 3 abas abertas para busca de CNPJ');
+  // Busca pelo Instagram E pelo nome da empresa
+  const ig = (l.instagram||'').replace('@','');
+  const nome = l.name || '';
+  if (ig) window.open(`https://www.google.com/search?q=${encodeURIComponent(ig+' CNPJ')}`, '_blank');
+  if (nome && nome !== ig) window.open(`https://www.google.com/search?q=${encodeURIComponent(nome+' CNPJ')}`, '_blank');
+  window.open(`https://www.google.com/maps/search/${encodeURIComponent(nome||ig)}`, '_blank');
+  toast('🔍 Abas abertas para busca de CNPJ');
 }
 
 async function consultarCNPJ() {
@@ -1955,6 +1983,11 @@ function exportCSVFiltered() {
   const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
   a.download = 'leads_filtrados_' + new Date().toISOString().split('T')[0] + '.csv'; a.click();
   toast('📥 CSV exportado!');
+}
+
+async function reoferecePrevia(mesAnt) {
+  const { data: varAnt } = await sb.from('financeiro_variaveis').select('*').eq('mes', mesAnt);
+  sugerirCopiarCustos(mesAnt, varAnt?.length > 0 ? varAnt : null);
 }
 
 // ── BUSCA DE LEADS ────────────────────────
@@ -2427,11 +2460,28 @@ function calcStatusCliente(cliente) {
   const hoje = new Date(); hoje.setHours(0,0,0,0);
   const pag = pagamentosClientes.find(p => p.cliente_id === cliente.id);
   if (pag?.status === 'pago') return 'em_dia';
-  // Verificar se passou do vencimento
   const [ano, mes] = mesClientes.split('-').map(Number);
   const dataVenc = new Date(ano, mes-1, cliente.dia_vencimento);
   if (hoje > dataVenc && !pag) return 'atrasado';
   return 'pendente';
+}
+
+// Calcular quantos meses um cliente está em atraso
+function calcMesesAtrasado(cliente) {
+  if (!cliente.dia_vencimento || cliente.status_contrato !== 'ativo') return 0;
+  const hoje = new Date(); hoje.setHours(0,0,0,0);
+  let mesesAtrasado = 0;
+  // Verificar últimos 6 meses
+  for (let i = 1; i <= 6; i++) {
+    const d = new Date(hoje.getFullYear(), hoje.getMonth() - i, 1);
+    const mesStr = d.toISOString().slice(0,7);
+    const dataVencMes = new Date(d.getFullYear(), d.getMonth(), cliente.dia_vencimento);
+    if (hoje <= dataVencMes) continue; // ainda não venceu
+    // Verificar se tem pagamento naquele mês - usamos pagamentosClientes apenas do mês atual
+    // Para meses anteriores, contamos apenas se o pagamento_status está como atrasado
+    mesesAtrasado++;
+  }
+  return mesesAtrasado;
 }
 
 function scoreColor(s) {
@@ -2499,6 +2549,7 @@ function renderClientes() {
         </div>
       </div>
 
+      ${currentUserRole==='admin'?`
       <!-- RESUMO DO MÊS -->
       <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px">
         <div style="background:rgba(52,199,89,.08);border:1px solid rgba(52,199,89,.2);border-radius:var(--r-l);padding:14px 16px">
@@ -2516,7 +2567,7 @@ function renderClientes() {
           <div style="font-size:20px;font-weight:700;color:var(--red)">${fmtMoeda(atrasado)}</div>
           <div style="font-size:11px;color:var(--text-3);margin-top:2px">passou do vencimento</div>
         </div>
-      </div>
+      </div>`:''}
 
       ${!clientes.length
         ? `<div class="empty-s" style="height:200px"><div class="es-icon">🤝</div><div class="es-title">Nenhum cliente ativo ainda</div><div class="es-sub">Clique em "+ Novo Cliente" para adicionar</div></div>`
@@ -2545,22 +2596,23 @@ function renderClientesCards(list, hoje) {
         </div>
         <div class="score-circle score-${sc}">${score}</div>
       </div>
+      ${currentUserRole==='admin'?`
       <div class="cliente-row"><span class="cliente-label">Contrato</span><span class="cliente-val">${fmtMoeda(c.valor_contrato)}/mês</span></div>
       <div class="cliente-row">
         <span class="cliente-label">Vencimento</span>
         <span class="cliente-val" style="color:${diasVenc!=null&&diasVenc<=5?'var(--red)':diasVenc!=null&&diasVenc<=10?'var(--orange)':'var(--text)'}">
           ${c.dia_vencimento?`Dia ${c.dia_vencimento}`:(venc?venc.toLocaleDateString('pt-BR'):'—')}
         </span>
-      </div>
+      </div>`:''}
       <div class="cliente-badges">
         <span class="pag-badge" style="background:${stColor}22;color:${stColor}">${stLabel}</span>
         <span class="contrato-badge">${c.status_contrato==='ativo'?'Ativo':c.status_contrato==='pausado'?'Pausado':'Encerrado'}</span>
       </div>
-      ${c.status_contrato==='ativo'&&pag?.status!=='pago'?`
+      ${currentUserRole==='admin'&&c.status_contrato==='ativo'&&pag?.status!=='pago'?`
       <button class="btn btn-p" style="width:100%;margin-top:10px;font-size:12px;justify-content:center" onclick="event.stopPropagation();registrarPagamentoCliente('${c.id}','${c.valor_contrato||0}','${esc(c.name)}')">
         💰 Registrar recebimento
       </button>`:''}
-      ${pag?.status==='pago'?`<div style="margin-top:8px;font-size:11px;color:var(--green);text-align:center">✓ Recebido em ${pag.data_pagamento?new Date(pag.data_pagamento+'T12:00:00').toLocaleDateString('pt-BR'):'—'}</div>`:''}
+      ${currentUserRole==='admin'&&pag?.status==='pago'?`<div style="margin-top:8px;font-size:11px;color:var(--green);text-align:center">✓ Recebido em ${pag.data_pagamento?new Date(pag.data_pagamento+'T12:00:00').toLocaleDateString('pt-BR'):'—'}</div>`:''}
     </div>`;
   }).join('')}</div>`;
 }
@@ -2578,11 +2630,11 @@ function renderClientesLista(list, hoje) {
       <div class="cliente-lista-score score-${sc}">${score}</div>
       <div style="flex:1;min-width:0">
         <div style="font-weight:600;font-size:13px">${esc(c.name)}</div>
-        <div style="font-size:11px;color:var(--text-3)">${esc(c.niche||'')}${c.dia_vencimento?` · vence dia ${c.dia_vencimento}`:''}</div>
+        <div style="font-size:11px;color:var(--text-3)">${esc(c.niche||'')}${currentUserRole==='admin'&&c.dia_vencimento?` · vence dia ${c.dia_vencimento}`:''}</div>
       </div>
-      <div style="font-size:13px;font-weight:700;min-width:100px;text-align:right">${fmtMoeda(c.valor_contrato)}</div>
+      ${currentUserRole==='admin'?`<div style="font-size:13px;font-weight:700;min-width:100px;text-align:right">${fmtMoeda(c.valor_contrato)}</div>`:''}
       <span class="pag-badge" style="background:${stColor}22;color:${stColor}">${stLabel}</span>
-      ${c.status_contrato==='ativo'&&pag?.status!=='pago'?`<button class="btn btn-p btn-sm" onclick="event.stopPropagation();registrarPagamentoCliente('${c.id}','${c.valor_contrato||0}','${esc(c.name)}')">💰 Recebido</button>`:''}
+      ${currentUserRole==='admin'&&c.status_contrato==='ativo'&&pag?.status!=='pago'?`<button class="btn btn-p btn-sm" onclick="event.stopPropagation();registrarPagamentoCliente('${c.id}','${c.valor_contrato||0}','${esc(c.name)}')">💰 Recebido</button>`:''}
     </div>`;
   }).join('')}</div>`;
 }
@@ -3172,38 +3224,85 @@ async function loadFinanceiro() {
   finVariaveis = rv.data || [];
 }
 
+async function ofertarPreviaManual() {
+  const [ano, mes] = mesVizualizado.split('-').map(Number);
+  const mesAnt = new Date(ano, mes-2, 1).toISOString().slice(0,7);
+  const { data: varAnt } = await sb.from('financeiro_variaveis').select('*').eq('mes', mesAnt);
+  // Marcar como oferecida
+  await sb.from('financeiro_meses').upsert({mes: mesVizualizado, previa_oferecida: true}, {onConflict:'mes'});
+  finMeses = finMeses.map(m => m.mes===mesVizualizado ? {...m, previa_oferecida:true} : m);
+  sugerirCopiarCustos(mesAnt, varAnt?.length > 0 ? varAnt : null);
+}
+
 async function navegarMes(dir) {
   const [ano, mes] = mesVizualizado.split('-').map(Number);
   const d = new Date(ano, mes - 1 + dir, 1);
   const mesAnterior = mesVizualizado;
   mesVizualizado = d.toISOString().slice(0,7);
 
-  const [rp, rv] = await Promise.all([
+  const [rp, rv, rm2] = await Promise.all([
     sb.from('financeiro_pagamentos_custos').select('*').eq('mes', mesVizualizado),
-    sb.from('financeiro_variaveis').select('*').eq('mes', mesVizualizado).order('created_at')
+    sb.from('financeiro_variaveis').select('*').eq('mes', mesVizualizado).order('created_at'),
+    sb.from('financeiro_meses').select('*').eq('mes', mesVizualizado).maybeSingle()
   ]);
   finPagamentos = rp.data || [];
   finVariaveis = rv.data || [];
 
+  // Atualizar finMeses com dados do mês atual
+  if (rm2.data) {
+    const idx = finMeses.findIndex(m=>m.mes===mesVizualizado);
+    if (idx >= 0) finMeses[idx] = rm2.data;
+    else finMeses.push(rm2.data);
+  }
+
+  // Propagar saldo do mês anterior para o próximo se não tiver caixa_inicial
+  if (dir > 0) {
+    const mesDataAtual = finMeses.find(m=>m.mes===mesVizualizado);
+    if (!mesDataAtual?.caixa_inicial) {
+      const mesAntData = finMeses.find(m=>m.mes===mesAnterior);
+      if (mesAntData?.caixa_inicial != null) {
+        // Calcular saldo final do mês anterior
+        const custosPagosAnt = (await sb.from('financeiro_pagamentos_custos').select('valor_pago').eq('mes', mesAnterior)).data?.reduce((s,p)=>s+Number(p.valor_pago||0),0)||0;
+        const varPagasAnt = (await sb.from('financeiro_variaveis').select('valor').eq('mes', mesAnterior).eq('pago', true)).data?.reduce((s,v)=>s+Number(v.valor||0),0)||0;
+        // Buscar receita recebida do mês anterior
+        const pagCliAnt = (await sb.from('pagamentos_clientes').select('valor_recebido').eq('mes', mesAnterior).eq('status','pago')).data?.reduce((s,p)=>s+Number(p.valor_recebido||0),0)||0;
+        const saldoFinalAnt = Number(mesAntData.caixa_inicial) + pagCliAnt - custosPagosAnt - varPagasAnt;
+        // Sugerir como saldo inicial do próximo mês
+        if (!mesDataAtual) {
+          // Silenciosamente pré-preencher
+          await sb.from('financeiro_meses').upsert({
+            mes: mesVizualizado,
+            caixa_inicial: Math.round(saldoFinalAnt * 100) / 100,
+            caixa_data: mesVizualizado + '-01'
+          }, {onConflict:'mes'});
+          // Recarregar
+          const { data: rmNew } = await sb.from('financeiro_meses').select('*').eq('mes', mesVizualizado).maybeSingle();
+          if (rmNew) finMeses.push(rmNew);
+        }
+      }
+    }
+  }
+
+  const mesData = finMeses.find(m=>m.mes===mesVizualizado);
+  const previaJaOferecida = mesData?.previa_oferecida === true;
+
   renderFinanceiro();
 
-  // Só sugerir cópia ao avançar (dir > 0) e somente se o mês destino não tiver dados
-  if (dir <= 0) return;
+  if (dir <= 0 || previaJaOferecida) return;
 
   const jaTenFixos = finPagamentos.length > 0;
   const jaTenVariaveis = finVariaveis.length > 0;
 
   if (!jaTenFixos && finCustos.length > 0) {
-    // Verificar se tem variáveis no mês anterior para sugerir depois
-    const { data: varAnt } = await sb.from('financeiro_variaveis')
-      .select('*').eq('mes', mesAnterior);
-    setTimeout(() => {
-      sugerirCopiarCustos(mesAnterior, !jaTenVariaveis ? varAnt : null);
-    }, 150);
+    const { data: varAnt } = await sb.from('financeiro_variaveis').select('*').eq('mes', mesAnterior);
+    await sb.from('financeiro_meses').upsert({mes: mesVizualizado, previa_oferecida: true}, {onConflict:'mes'});
+    finMeses = finMeses.map(m => m.mes===mesVizualizado ? {...m, previa_oferecida:true} : m);
+    setTimeout(() => sugerirCopiarCustos(mesAnterior, !jaTenVariaveis ? varAnt : null), 150);
   } else if (!jaTenVariaveis) {
-    const { data: varAnt } = await sb.from('financeiro_variaveis')
-      .select('*').eq('mes', mesAnterior);
+    const { data: varAnt } = await sb.from('financeiro_variaveis').select('*').eq('mes', mesAnterior);
     if (varAnt?.length > 0) {
+      await sb.from('financeiro_meses').upsert({mes: mesVizualizado, previa_oferecida: true}, {onConflict:'mes'});
+      finMeses = finMeses.map(m => m.mes===mesVizualizado ? {...m, previa_oferecida:true} : m);
       setTimeout(() => sugerirCopiarVariaveis(mesAnterior, varAnt), 150);
     }
   }
@@ -3273,44 +3372,42 @@ function renderFinanceiro() {
   const wrap = document.getElementById('finWrap');
   const totalCustos = finCustos.filter(c=>c.ativo&&c.recorrente).reduce((s,c)=>s+Number(c.valor),0);
   const totalVariaveis = finVariaveis.reduce((s,v)=>s+Number(v.valor),0);
-
-  // Receita real do mês: buscar pagamentos_clientes do mês visualizado
-  // Como finPagamentos é de custos, precisamos calcular receita direto dos clientes
   const ativosContrato = clientes.filter(c=>c.status_contrato==='ativo');
 
-  // Para o mês visualizado no financeiro, calcular receita
   let receitaRecebida = 0, receitaPrevista = 0, receitaAtrasada = 0;
   ativosContrato.forEach(c => {
     const val = Number(c.valor_contrato||0);
-    // Verificar pagamento no mês visualizado do financeiro
-    // Usamos mesVizualizado para o financeiro
     const hoje = new Date(); hoje.setHours(0,0,0,0);
     const [ano, mes] = mesVizualizado.split('-').map(Number);
     const dataVenc = c.dia_vencimento ? new Date(ano, mes-1, c.dia_vencimento) : null;
-    // Como pagamentos_clientes é do mesClientes (aba clientes), usar valor do contrato como estimativa
     if (mesVizualizado === mesClientes) {
       const pag = pagamentosClientes.find(p=>p.cliente_id===c.id);
       if (pag?.status==='pago') receitaRecebida += Number(pag.valor_recebido||val);
       else if (dataVenc && hoje > dataVenc) receitaAtrasada += val;
       else receitaPrevista += val;
     } else {
-      receitaPrevista += val; // mês diferente, usar valor do contrato
+      receitaPrevista += val;
     }
   });
 
-  const totalReceita = receitaRecebida + receitaPrevista + receitaAtrasada;
   const lucro = receitaRecebida - totalCustos - totalVariaveis;
-  const custosPagos = finPagamentos.reduce((s,p)=>s+Number(p.valor_pago||0),0);
+  const custosPagos = finPagamentos.filter(p=>!p.ignorado).reduce((s,p)=>s+Number(p.valor_pago||0),0);
   const variaveisPagas = finVariaveis.filter(v=>v.pago).reduce((s,v)=>s+Number(v.valor),0);
   const totalPago = custosPagos + variaveisPagas;
   const custosPendentes = totalCustos - custosPagos;
-  const caixaAtual = receitaRecebida - totalPago;
 
   const mesData = finMeses.find(m=>m.mes===mesVizualizado);
   const {ant, prox} = getMesesNav();
   const [ano, mes] = mesVizualizado.split('-').map(Number);
   const mesNome = new Date(ano, mes-1, 1).toLocaleDateString('pt-BR',{month:'long',year:'numeric'});
   const isMesAtual = mesVizualizado === mesAtualFin;
+  const previaJaOferecida = mesData?.previa_oferecida === true;
+
+  // Caixa: se tem registro manual usa ele, senão usa cálculo
+  const caixaInicial = mesData?.caixa_inicial != null ? Number(mesData.caixa_inicial) : null;
+  const caixaEstimado = caixaInicial != null
+    ? caixaInicial + receitaRecebida - totalPago
+    : receitaRecebida - totalPago;
 
   wrap.innerHTML = `
     <div class="fin-wrap">
@@ -3319,10 +3416,15 @@ function renderFinanceiro() {
         <div>
           <div style="font-size:22px;font-weight:700;letter-spacing:-.4px">Financeiro</div>
         </div>
-        <div style="display:flex;align-items:center;gap:4px;background:var(--glass);border:1px solid var(--glass-border);border-radius:980px;padding:4px 8px;backdrop-filter:blur(12px)">
-          <button onclick="navegarMes(-1)" style="background:none;border:none;cursor:pointer;padding:4px 8px;border-radius:20px;font-size:13px;color:var(--text-2);transition:var(--t)" onmouseover="this.style.background='rgba(0,0,0,.06)'" onmouseout="this.style.background='none'">← ${getMesLabel(ant)}</button>
-          <div style="padding:4px 14px;background:var(--accent);color:#fff;border-radius:980px;font-size:12px;font-weight:700">${getMesLabel(mesVizualizado)}${isMesAtual?' · Atual':''}</div>
-          <button onclick="navegarMes(1)" style="background:none;border:none;cursor:pointer;padding:4px 8px;border-radius:20px;font-size:13px;color:var(--text-2);transition:var(--t)" onmouseover="this.style.background='rgba(0,0,0,.06)'" onmouseout="this.style.background='none'">${getMesLabel(prox)} →</button>
+        <div style="display:flex;gap:8px;align-items:center">
+          <!-- Navegação de meses -->
+          <div style="display:flex;align-items:center;gap:4px;background:var(--glass);border:1px solid var(--glass-border);border-radius:980px;padding:4px 8px;backdrop-filter:blur(12px)">
+            <button onclick="navegarMes(-1)" style="background:none;border:none;cursor:pointer;padding:4px 8px;border-radius:20px;font-size:13px;color:var(--text-2);transition:var(--t)" onmouseover="this.style.background='rgba(0,0,0,.06)'" onmouseout="this.style.background='none'">← ${getMesLabel(ant)}</button>
+            <div style="padding:4px 14px;background:var(--accent);color:#fff;border-radius:980px;font-size:12px;font-weight:700">${getMesLabel(mesVizualizado)}${isMesAtual?' · Atual':''}</div>
+            <button onclick="navegarMes(1)" style="background:none;border:none;cursor:pointer;padding:4px 8px;border-radius:20px;font-size:13px;color:var(--text-2);transition:var(--t)" onmouseover="this.style.background='rgba(0,0,0,.06)'" onmouseout="this.style.background='none'">${getMesLabel(prox)} →</button>
+          </div>
+          ${mesData?.previa_oferecida && finPagamentos.length===0 ? `
+          <button class="btn btn-g btn-sm" onclick="reoferecePrevia('${ant}')" title="Trazer custos e variáveis do mês anterior">↓ Trazer de ${getMesLabel(ant)}</button>` : ''}
         </div>
       </div>
 
@@ -3330,25 +3432,28 @@ function renderFinanceiro() {
       <div class="card">
         <div class="ch">
           <div class="ct"><span class="ct-i">💰</span> Caixa da Empresa</div>
-          <button class="btn btn-g btn-sm" onclick="editarCaixa()">✏️ Editar</button>
+          <div style="display:flex;gap:6px">
+            ${!previaJaOferecida?`<button class="btn btn-g btn-sm" onclick="ofertarPreviaManual()">↓ Trazer do mês anterior</button>`:''}
+            <button class="btn btn-g btn-sm" onclick="editarCaixa()">✏️ Editar</button>
+          </div>
         </div>
         <div style="padding:16px 20px;display:grid;grid-template-columns:repeat(3,1fr);gap:16px">
           <div>
-            <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--text-3);margin-bottom:6px">Saldo inicial registrado</div>
-            <div style="font-size:20px;font-weight:700;color:var(--text)">${mesData?.caixa_inicial!=null?fmtMoeda(mesData.caixa_inicial):'<span style="color:var(--text-3);font-size:14px">Não informado</span>'}</div>
+            <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--text-3);margin-bottom:6px">Saldo inicial</div>
+            <div style="font-size:20px;font-weight:700;color:var(--text)">${caixaInicial!=null?fmtMoeda(caixaInicial):'<span style="color:var(--text-3);font-size:14px">Não informado</span>'}</div>
             ${mesData?.caixa_data?`<div style="font-size:11px;color:var(--text-3);margin-top:3px">em ${new Date(mesData.caixa_data+'T12:00:00').toLocaleDateString('pt-BR')}</div>`:''}
           </div>
           <div>
-            <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--text-3);margin-bottom:6px">Receita mensal</div>
-            <div style="font-size:20px;font-weight:700;color:var(--green)">${fmtMoeda(totalReceita)}</div>
-            <div style="font-size:11px;color:var(--text-3);margin-top:3px">${clientes.filter(c=>c.status_contrato==='ativo').length} contratos</div>
+            <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--text-3);margin-bottom:6px">Receita recebida</div>
+            <div style="font-size:20px;font-weight:700;color:var(--green)">${fmtMoeda(receitaRecebida)}</div>
+            <div style="font-size:11px;color:var(--text-3);margin-top:3px">${ativosContrato.length} contratos ativos</div>
           </div>
           <div>
-            <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--text-3);margin-bottom:6px">Saldo estimado</div>
-            <div style="font-size:20px;font-weight:700;color:${caixaAtual>=0?'var(--accent)':'var(--red)'}">
-              ${mesData?.caixa_inicial!=null ? fmtMoeda(Number(mesData.caixa_inicial)+totalReceita-custosPagos) : fmtMoeda(caixaAtual)}
+            <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--text-3);margin-bottom:6px">💰 Saldo estimado</div>
+            <div style="font-size:20px;font-weight:700;color:${caixaEstimado>=0?'var(--accent)':'var(--red)'}">
+              ${fmtMoeda(caixaEstimado)}
             </div>
-            <div style="font-size:11px;color:var(--text-3);margin-top:3px">saldo ± entradas − pagamentos</div>
+            <div style="font-size:11px;color:var(--text-3);margin-top:3px">${caixaInicial!=null?'saldo inicial + recebido − pagamentos':'recebido − pagamentos'}</div>
           </div>
         </div>
       </div>

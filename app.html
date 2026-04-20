@@ -2730,12 +2730,14 @@ function renderClienteDetalhe() {
       <div class="card">
         <div class="ch"><div class="ct"><span class="ct-i">📄</span> Contrato</div></div>
         <div class="ig" style="grid-template-columns:repeat(3,1fr)">
-          <div class="ic"><div class="il">Valor mensal</div><div class="iv">${fmtMoeda(c.valor_contrato)}</div></div>
+          ${currentUserRole==='admin'?`
+          <div class="ic"><div class="il">Valor mensal</div><div class="iv">${fmtMoeda(c.valor_contrato)}</div></div>`:''}
           <div class="ic"><div class="il">Início</div><div class="iv">${c.data_inicio?new Date(c.data_inicio+'T12:00:00').toLocaleDateString('pt-BR'):'—'}</div></div>
+          ${currentUserRole==='admin'?`
           <div class="ic"><div class="il">Vencimento</div><div class="iv">${c.data_vencimento?new Date(c.data_vencimento+'T12:00:00').toLocaleDateString('pt-BR'):'—'}</div></div>
           <div class="ic"><div class="il">Pagamento</div><div class="iv"><span class="pag-badge pag-${c.status_pagamento}">${c.status_pagamento==='em_dia'?'✓ Em dia':c.status_pagamento==='atrasado'?'⚠ Atrasado':'Trial'}</span></div></div>
           <div class="ic"><div class="il">Dia de cobrança</div><div class="iv">${c.dia_vencimento?`Todo dia <strong>${c.dia_vencimento}</strong>`:'—'}</div></div>
-          <div class="ic"><div class="il">Orçamento ads</div><div class="iv">${fmtMoeda(c.orcamento_mensal)}</div></div>
+          <div class="ic"><div class="il">Orçamento ads</div><div class="iv">${fmtMoeda(c.orcamento_mensal)}</div></div>`:''}
           <div class="ic"><div class="il">Contato</div><div class="iv">${c.whatsapp?`<a href="https://wa.me/55${c.whatsapp.replace(/\D/g,'')}" target="_blank" class="iv a">📱 ${esc(c.whatsapp)}</a>`:'—'}</div></div>
         </div>
         ${c.objetivo?`<div class="obs-b"><strong>Objetivo:</strong> ${esc(c.objetivo)}</div>`:''}
@@ -3470,9 +3472,9 @@ function renderFinanceiro() {
           <div class="fin-card-val" style="color:var(--red)">${fmtMoeda(totalCustos)}</div>
           <div class="fin-card-sub">${finCustos.filter(c=>c.ativo).length} itens · var: ${fmtMoeda(totalVariaveis)}</div>
         </div>
-        <div class="fin-card ${caixaAtual>=0?'fin-card-azul':'fin-card-vermelho'}">
+        <div class="fin-card ${caixaEstimado>=0?'fin-card-azul':'fin-card-vermelho'}">
           <div class="fin-card-label">💰 Caixa atual</div>
-          <div class="fin-card-val" style="color:${caixaAtual>=0?'var(--accent)':'var(--red)'}">${fmtMoeda(caixaAtual)}</div>
+          <div class="fin-card-val" style="color:${caixaEstimado>=0?'var(--accent)':'var(--red)'}">${fmtMoeda(caixaEstimado)}</div>
           <div class="fin-card-sub">recebido − custos pagos</div>
         </div>
         <div class="fin-card ${lucro>=0?'fin-card-verde':'fin-card-vermelho'}">

@@ -3242,10 +3242,9 @@ async function loadFinanceiro() {
   finCartao = rct.data || [];
 }
 
-// Retorna custos do mês atual — filtrando os marcados como ignorados
+// Retorna custos do mês atual — lê financeiro_custos_mes diretamente
 function getCustosDoMes() {
-  const ignorados = new Set(finCustosMes.filter(m=>m.ignorado).map(m=>m.custo_id));
-  return finCustos.filter(c=>c.ativo && !ignorados.has(c.id));
+  return finCustosMes.filter(c => c.ativo && !c.ignorado);
 }
 
 // Retorna parcelas do cartão que vencem no mês visualizado
@@ -3269,85 +3268,80 @@ function getParcelasDoMes() {
 async function ofertarPreviaManual() {
   const [ano, mes] = mesVizualizado.split('-').map(Number);
   const mesAnt = new Date(ano, mes-2, 1).toISOString().slice(0,7);
+  const { data: custosAnt } = await sb.from('financeiro_custos_mes')
+    .select('*').eq('mes', mesAnt).eq('ativo', true).eq('ignorado', false);
   const { data: varAnt } = await sb.from('financeiro_variaveis').select('*').eq('mes', mesAnt);
-  // Marcar como oferecida
-  await sb.from('financeiro_meses').upsert({mes: mesVizualizado, previa_oferecida: true}, {onConflict:'mes'});
-  finMeses = finMeses.map(m => m.mes===mesVizualizado ? {...m, previa_oferecida:true} : m);
-  sugerirCopiarCustos(mesAnt, varAnt?.length > 0 ? varAnt : null);
+
+  if (!custosAnt?.length && !varAnt?.length) {
+    toast('Nenhum registro encontrado em ' + getMesLabel(mesAnt));
+    return;
+  }
+  showMiniModal(
+    `↓ Trazer do ${getMesLabel(mesAnt)}`,
+    `Encontrado: ${custosAnt?.length||0} custo(s) fixo(s) e ${varAnt?.length||0} conta(s) variável(eis). Deseja copiar para ${getMesLabel(mesVizualizado)}?`,
+    [
+      { label: '✓ Trazer tudo', cls: 'btn-p', fn: async () => {
+        closeMiniModal();
+        let count = 0;
+        // Copiar custos fixos
+        for (const c of (custosAnt||[])) {
+          const jaExiste = finCustosMes.find(x=>x.nome===c.nome&&x.mes===mesVizualizado);
+          if (!jaExiste) {
+            await sb.from('financeiro_custos_mes').insert({
+              mes: mesVizualizado, nome: c.nome, categoria: c.categoria,
+              valor: c.valor, dia_vencimento: c.dia_vencimento, obs: c.obs,
+              ativo: true, ignorado: false
+            });
+            count++;
+          }
+        }
+        // Copiar variáveis
+        for (const v of (varAnt||[])) {
+          const jaExiste = finVariaveis.find(x=>x.nome===v.nome&&x.mes===mesVizualizado);
+          if (!jaExiste) {
+            await sb.from('financeiro_variaveis').insert({
+              mes: mesVizualizado, nome: v.nome, categoria: v.categoria,
+              valor: v.valor, obs: `Copiado de ${getMesLabel(mesAnt)}`, pago: false
+            });
+            count++;
+          }
+        }
+        const [rp, rv, rcm] = await Promise.all([
+          sb.from('financeiro_pagamentos_custos').select('*').eq('mes', mesVizualizado),
+          sb.from('financeiro_variaveis').select('*').eq('mes', mesVizualizado).order('created_at'),
+          sb.from('financeiro_custos_mes').select('*').eq('mes', mesVizualizado)
+        ]);
+        finPagamentos = rp.data||[]; finVariaveis = rv.data||[]; finCustosMes = rcm.data||[];
+        renderFinanceiro();
+        toast(`✓ ${count} registro(s) copiado(s)`);
+      }},
+      { label: '✕ Cancelar', cls: 'btn-g', fn: closeMiniModal }
+    ]
+  );
 }
 
 async function navegarMes(dir) {
   const [ano, mes] = mesVizualizado.split('-').map(Number);
   const d = new Date(ano, mes - 1 + dir, 1);
-  const mesAnterior = mesVizualizado;
   mesVizualizado = d.toISOString().slice(0,7);
 
-  const [rp, rv, rm2] = await Promise.all([
+  const [rp, rv, rm2, rcm] = await Promise.all([
     sb.from('financeiro_pagamentos_custos').select('*').eq('mes', mesVizualizado),
     sb.from('financeiro_variaveis').select('*').eq('mes', mesVizualizado).order('created_at'),
-    sb.from('financeiro_meses').select('*').eq('mes', mesVizualizado).maybeSingle()
+    sb.from('financeiro_meses').select('*').eq('mes', mesVizualizado).maybeSingle(),
+    sb.from('financeiro_custos_mes').select('*').eq('mes', mesVizualizado)
   ]);
   finPagamentos = rp.data || [];
   finVariaveis = rv.data || [];
+  finCustosMes = rcm.data || [];
 
-  // Atualizar finMeses com dados do mês atual
   if (rm2.data) {
     const idx = finMeses.findIndex(m=>m.mes===mesVizualizado);
     if (idx >= 0) finMeses[idx] = rm2.data;
     else finMeses.push(rm2.data);
   }
 
-  // Propagar saldo do mês anterior para o próximo se não tiver caixa_inicial
-  if (dir > 0) {
-    const mesDataAtual = finMeses.find(m=>m.mes===mesVizualizado);
-    if (!mesDataAtual?.caixa_inicial) {
-      const mesAntData = finMeses.find(m=>m.mes===mesAnterior);
-      if (mesAntData?.caixa_inicial != null) {
-        // Calcular saldo final do mês anterior
-        const custosPagosAnt = (await sb.from('financeiro_pagamentos_custos').select('valor_pago').eq('mes', mesAnterior)).data?.reduce((s,p)=>s+Number(p.valor_pago||0),0)||0;
-        const varPagasAnt = (await sb.from('financeiro_variaveis').select('valor').eq('mes', mesAnterior).eq('pago', true)).data?.reduce((s,v)=>s+Number(v.valor||0),0)||0;
-        // Buscar receita recebida do mês anterior
-        const pagCliAnt = (await sb.from('pagamentos_clientes').select('valor_recebido').eq('mes', mesAnterior).eq('status','pago')).data?.reduce((s,p)=>s+Number(p.valor_recebido||0),0)||0;
-        const saldoFinalAnt = Number(mesAntData.caixa_inicial) + pagCliAnt - custosPagosAnt - varPagasAnt;
-        // Sugerir como saldo inicial do próximo mês
-        if (!mesDataAtual) {
-          // Silenciosamente pré-preencher
-          await sb.from('financeiro_meses').upsert({
-            mes: mesVizualizado,
-            caixa_inicial: Math.round(saldoFinalAnt * 100) / 100,
-            caixa_data: mesVizualizado + '-01'
-          }, {onConflict:'mes'});
-          // Recarregar
-          const { data: rmNew } = await sb.from('financeiro_meses').select('*').eq('mes', mesVizualizado).maybeSingle();
-          if (rmNew) finMeses.push(rmNew);
-        }
-      }
-    }
-  }
-
-  const mesData = finMeses.find(m=>m.mes===mesVizualizado);
-  const previaJaOferecida = mesData?.previa_oferecida === true;
-
   renderFinanceiro();
-
-  if (dir <= 0 || previaJaOferecida) return;
-
-  const jaTenFixos = finPagamentos.length > 0;
-  const jaTenVariaveis = finVariaveis.length > 0;
-
-  if (!jaTenFixos && finCustos.length > 0) {
-    const { data: varAnt } = await sb.from('financeiro_variaveis').select('*').eq('mes', mesAnterior);
-    await sb.from('financeiro_meses').upsert({mes: mesVizualizado, previa_oferecida: true}, {onConflict:'mes'});
-    finMeses = finMeses.map(m => m.mes===mesVizualizado ? {...m, previa_oferecida:true} : m);
-    setTimeout(() => sugerirCopiarCustos(mesAnterior, !jaTenVariaveis ? varAnt : null), 150);
-  } else if (!jaTenVariaveis) {
-    const { data: varAnt } = await sb.from('financeiro_variaveis').select('*').eq('mes', mesAnterior);
-    if (varAnt?.length > 0) {
-      await sb.from('financeiro_meses').upsert({mes: mesVizualizado, previa_oferecida: true}, {onConflict:'mes'});
-      finMeses = finMeses.map(m => m.mes===mesVizualizado ? {...m, previa_oferecida:true} : m);
-      setTimeout(() => sugerirCopiarVariaveis(mesAnterior, varAnt), 150);
-    }
-  }
 }
 
 function sugerirCopiarCustos(mesAnt, varAnt) {
@@ -3448,10 +3442,22 @@ function renderFinanceiro() {
   const isMesAtual = mesVizualizado === mesAtualFin;
   const previaJaOferecida = mesData?.previa_oferecida === true;
 
-  // Caixa: se tem registro manual usa ele, senão usa cálculo
+  // Caixa com data âncora
   const caixaInicial = mesData?.caixa_inicial != null ? Number(mesData.caixa_inicial) : null;
-  const caixaEstimado = caixaInicial != null
-    ? caixaInicial + receitaRecebida - totalPago
+  const caixaData = mesData?.caixa_data || null;
+
+  // Saldo = caixa_inicial + recebimentos APÓS caixaData - pagamentos APÓS caixaData
+  let receitaAposCaixa = 0, custosAposCaixa = 0, variaveisAposCaixa = 0;
+  if (caixaInicial != null && caixaData) {
+    pagamentosClientes.filter(p=>p.status==='pago'&&p.data_pagamento&&p.data_pagamento>=caixaData)
+      .forEach(p=>receitaAposCaixa+=Number(p.valor_recebido||0));
+    finPagamentos.filter(p=>!p.ignorado&&p.data_pagamento&&p.data_pagamento>=caixaData)
+      .forEach(p=>custosAposCaixa+=Number(p.valor_pago||0));
+    finVariaveis.filter(v=>v.pago&&v.data_pagamento&&v.data_pagamento>=caixaData)
+      .forEach(v=>variaveisAposCaixa+=Number(v.valor||0));
+  }
+  const caixaEstimado = caixaInicial != null && caixaData
+    ? caixaInicial + receitaAposCaixa - custosAposCaixa - variaveisAposCaixa
     : receitaRecebida - totalPago;
 
   wrap.innerHTML = `
@@ -3484,9 +3490,9 @@ function renderFinanceiro() {
         </div>
         <div style="padding:16px 20px;display:grid;grid-template-columns:repeat(3,1fr);gap:16px">
           <div>
-            <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--text-3);margin-bottom:6px">Saldo inicial</div>
+            <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--text-3);margin-bottom:6px">Saldo registrado</div>
             <div style="font-size:20px;font-weight:700;color:var(--text)">${caixaInicial!=null?fmtMoeda(caixaInicial):'<span style="color:var(--text-3);font-size:14px">Não informado</span>'}</div>
-            ${mesData?.caixa_data?`<div style="font-size:11px;color:var(--text-3);margin-top:3px">em ${new Date(mesData.caixa_data+'T12:00:00').toLocaleDateString('pt-BR')}</div>`:''}
+            ${caixaData?`<div style="font-size:11px;color:var(--text-3);margin-top:3px">📅 em ${new Date(caixaData+'T12:00:00').toLocaleDateString('pt-BR')} · <span style="color:var(--accent)">data âncora</span></div>`:'<div style="font-size:11px;color:var(--orange);margin-top:3px">⚠ Sem data — edite para ativar cálculo real</div>'}
           </div>
           <div>
             <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--text-3);margin-bottom:6px">Receita recebida</div>
@@ -3567,7 +3573,7 @@ function renderFinanceiro() {
                 <button class="btn btn-g btn-sm" onclick="openCustoModal('${c.id}')">✏️</button>
               </div>
             </div>`}).join('')
-            : '<div class="h-emp">Nenhum custo cadastrado</div>'}
+            : '<div class="h-emp">Nenhum custo neste mês · clique em "+ Adicionar" ou use "↓ Trazer do mês anterior"</div>'}
         </div>
       </div>
 
@@ -3699,16 +3705,14 @@ async function editarCaixa() {
   });
 }
 
-async function marcarCustoPago(custoId, valor) {
-  const custo = finCustos.find(c=>c.id===custoId);
-  // Calcular data de vencimento padrão baseada no dia_vencimento do custo
-  const hoje = new Date();
+async function marcarCustoPago(custoMesId, valor) {
+  const custo = finCustosMes.find(c=>c.id===custoMesId);
   let vencDefault = '';
   if (custo?.dia_vencimento) {
-    const d = new Date(hoje.getFullYear(), hoje.getMonth(), custo.dia_vencimento);
+    const [ano, mes] = mesVizualizado.split('-').map(Number);
+    const d = new Date(ano, mes-1, custo.dia_vencimento);
     vencDefault = d.toISOString().split('T')[0];
   }
-
   showMiniModal('✓ Registrar pagamento', '', []);
   document.getElementById('fuMiniSub').innerHTML = `
     <div style="display:flex;flex-direction:column;gap:10px;margin-top:4px">
@@ -3726,13 +3730,12 @@ async function marcarCustoPago(custoId, valor) {
   document.getElementById('fuMiniBtns').innerHTML = '';
   [
     { label: '✓ Confirmar', cls: 'btn-p', fn: async () => {
-      const dataVenc = document.getElementById('dataVencInput')?.value || null;
-      const dataPag = document.getElementById('dataPagInput')?.value || new Date().toISOString().split('T')[0];
+      const dataVenc = document.getElementById('dataVencInput')?.value||null;
+      const dataPag = document.getElementById('dataPagInput')?.value||new Date().toISOString().split('T')[0];
       await sb.from('financeiro_pagamentos_custos').upsert({
-        custo_id: custoId,
-        mes: mesVizualizado,
+        custo_id: custoMesId, mes: mesVizualizado,
         valor_pago: parseFloat(valor)||0,
-        data_vencimento: dataVenc || null,
+        data_vencimento: dataVenc||null,
         data_pagamento: dataPag
       }, {onConflict:'custo_id,mes'});
       closeMiniModal();
@@ -3744,22 +3747,21 @@ async function marcarCustoPago(custoId, valor) {
     { label: 'Cancelar', cls: 'btn-g', fn: closeMiniModal }
   ].forEach(b => {
     const el = document.createElement('button');
-    el.className = 'btn ' + b.cls; el.textContent = b.label; el.onclick = b.fn;
+    el.className = 'btn '+b.cls; el.textContent = b.label; el.onclick = b.fn;
     document.getElementById('fuMiniBtns').appendChild(el);
   });
 }
 
-async function togglePagoCusto(custoId, estaPago) {
+async function togglePagoCusto(custoMesId, estaPago) {
   if (estaPago) {
     await sb.from('financeiro_pagamentos_custos')
-      .delete().eq('custo_id', custoId).eq('mes', mesVizualizado);
-    const { data: rp } = await sb.from('financeiro_pagamentos_custos').select('*').eq('mes', mesVizualizado);
-    finPagamentos = rp || [];
+      .delete().eq('custo_id', custoMesId).eq('mes', mesVizualizado);
+    finPagamentos = finPagamentos.filter(p=>!(p.custo_id===custoMesId&&p.mes===mesVizualizado));
     renderFinanceiro();
     toast('Pagamento removido');
   } else {
-    const custo = finCustos.find(c=>c.id===custoId);
-    if (custo) marcarCustoPago(custoId, custo.valor);
+    const custo = finCustosMes.find(c=>c.id===custoMesId);
+    if (custo) marcarCustoPago(custoMesId, custo.valor);
   }
 }
 
@@ -3977,7 +3979,8 @@ function verTodasCompras() {
 }
 
 function openCustoModal(id = null) {
-  const c = id ? finCustos.find(x=>x.id===id) : null;
+  // id pode ser de finCustosMes (edição no mês) ou null (novo)
+  const cm = id ? finCustosMes.find(x=>x.id===id) : null;
   const overlay = document.createElement('div');
   overlay.className = 'overlay open';
   overlay.id = 'custoOverlay';
@@ -3985,51 +3988,65 @@ function openCustoModal(id = null) {
   overlay.innerHTML = `
     <div class="modal">
       <div class="m-drag"></div>
-      <div class="mt">${c?'Editar Custo':'Novo Custo Fixo'}</div>
-      <div class="fg"><label class="fl">Nome</label><input class="fc2" id="cu-nome" value="${esc(c?.nome||'')}" placeholder="Ex: Ferramenta de gestão"></div>
+      <div class="mt" style="margin-bottom:4px">${cm?'Editar Custo':'Novo Custo Fixo'}</div>
+      <div style="font-size:11px;color:var(--text-3);margin-bottom:14px;text-align:center">Este registro é exclusivo de <strong>${getMesLabel(mesVizualizado)}</strong></div>
+      <div class="fg"><label class="fl">Nome</label><input class="fc2" id="cu-nome" value="${esc(cm?.nome||'')}" placeholder="Ex: Ferramenta de gestão"></div>
       <div class="fr">
         <div class="fg"><label class="fl">Categoria</label>
           <select class="fc2" id="cu-cat">
-            <option value="operacional" ${c?.categoria==='operacional'?'selected':''}>Operacional</option>
-            <option value="pessoal" ${c?.categoria==='pessoal'?'selected':''}>Pessoal</option>
-            <option value="marketing" ${c?.categoria==='marketing'?'selected':''}>Marketing</option>
-            <option value="tecnologia" ${c?.categoria==='tecnologia'?'selected':''}>Tecnologia</option>
-            <option value="outro" ${c?.categoria==='outro'?'selected':''}>Outro</option>
+            <option value="operacional" ${cm?.categoria==='operacional'?'selected':''}>Operacional</option>
+            <option value="pessoal" ${cm?.categoria==='pessoal'?'selected':''}>Pessoal</option>
+            <option value="marketing" ${cm?.categoria==='marketing'?'selected':''}>Marketing</option>
+            <option value="tecnologia" ${cm?.categoria==='tecnologia'?'selected':''}>Tecnologia</option>
+            <option value="outro" ${cm?.categoria==='outro'?'selected':''}>Outro</option>
           </select>
         </div>
-        <div class="fg"><label class="fl">Valor (R$)</label><input class="fc2" id="cu-val" type="number" value="${c?.valor||''}" placeholder="0,00"></div>
+        <div class="fg"><label class="fl">Valor (R$)</label><input class="fc2" id="cu-val" type="number" value="${cm?.valor||''}" placeholder="0,00"></div>
       </div>
       <div class="fr">
-        <div class="fg"><label class="fl">Dia de vencimento (todo mês)</label><input class="fc2" id="cu-dia" type="number" min="1" max="31" value="${c?.dia_vencimento||''}" placeholder="Ex: 10"></div>
-        <div class="fg"><label class="fl">Observação</label><input class="fc2" id="cu-obs" value="${esc(c?.obs||'')}" placeholder="Opcional"></div>
+        <div class="fg"><label class="fl">Dia de vencimento</label><input class="fc2" id="cu-dia" type="number" min="1" max="31" value="${cm?.dia_vencimento||''}" placeholder="Ex: 10"></div>
+        <div class="fg"><label class="fl">Observação</label><input class="fc2" id="cu-obs" value="${esc(cm?.obs||'')}" placeholder="Opcional"></div>
       </div>
       <div class="mf">
         <button class="btn btn-g" onclick="document.getElementById('custoOverlay').remove()">Cancelar</button>
-        ${c?`<button class="btn btn-red" onclick="deleteCusto('${c.id}')">Excluir</button>`:''}
-        <button class="btn btn-p" onclick="saveCusto('${id||''}')">Salvar</button>
+        ${cm?`<button class="btn btn-red" onclick="deleteCustoMes('${cm.id}')">Excluir</button>`:''}
+        <button class="btn btn-p" onclick="saveCustoMes('${id||''}')">Salvar</button>
       </div>
     </div>`;
   document.body.appendChild(overlay);
 }
 
-async function saveCusto(id) {
+async function saveCustoMes(id) {
   const payload = {
+    mes: mesVizualizado,
     nome: document.getElementById('cu-nome').value.trim(),
     categoria: document.getElementById('cu-cat').value,
     valor: parseFloat(document.getElementById('cu-val').value)||0,
     dia_vencimento: parseInt(document.getElementById('cu-dia').value)||null,
     obs: document.getElementById('cu-obs').value.trim(),
+    ativo: true, ignorado: false
   };
   if (!payload.nome) { toast('Nome é obrigatório'); return; }
   if (id) {
-    await sb.from('financeiro_custos').update(payload).eq('id', id);
+    await sb.from('financeiro_custos_mes').update(payload).eq('id', id);
   } else {
-    await sb.from('financeiro_custos').insert(payload);
+    await sb.from('financeiro_custos_mes').insert(payload);
   }
   document.getElementById('custoOverlay')?.remove();
-  await loadFinanceiro();
+  const { data: rcm } = await sb.from('financeiro_custos_mes').select('*').eq('mes', mesVizualizado);
+  finCustosMes = rcm || [];
   renderFinanceiro();
   toast('✓ Custo salvo');
+}
+
+async function deleteCustoMes(id) {
+  document.getElementById('custoOverlay')?.remove();
+  await sb.from('financeiro_custos_mes').delete().eq('id', id);
+  finCustosMes = finCustosMes.filter(c=>c.id!==id);
+  // Remover pagamento associado se existir
+  finPagamentos = finPagamentos.filter(p=>p.custo_id!==id);
+  renderFinanceiro();
+  toast('✓ Custo removido deste mês');
 }
 
 async function deleteCusto(id) {

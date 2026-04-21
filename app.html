@@ -3679,8 +3679,7 @@ function renderFinCustos() {
       </div>
       <div>
         ${custosDoMes.length ? custosDoMes.map(c => {
-          const pag = finPagamentos.find(p=>p.custo_id===c.id&&!p.ignorado);
-          const pago = !!pag;
+          const pago = !!c.pago;
           return `<div class="custo-row">
             <div style="display:flex;align-items:center;gap:10px;flex:1;min-width:0;cursor:pointer" onclick="togglePagoCusto('${c.id}',${pago})">
               <div style="width:22px;height:22px;border-radius:50%;border:2px solid ${pago?'var(--green)':'var(--border-s)'};background:${pago?'var(--green)':'transparent'};display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:var(--t)">
@@ -3688,7 +3687,7 @@ function renderFinCustos() {
               </div>
               <div>
                 <div class="custo-nome" style="${pago?'text-decoration:line-through;color:var(--text-3)':''}">${esc(c.nome)}</div>
-                <div class="custo-cat">${c.categoria||''}${c.dia_vencimento?` · vence dia ${c.dia_vencimento}`:''}${pago&&pag.data_pagamento?` · pago ${new Date(pag.data_pagamento+'T12:00:00').toLocaleDateString('pt-BR')}`:''}</div>
+                <div class="custo-cat">${c.categoria||''}${c.dia_vencimento?` · vence dia ${c.dia_vencimento}`:''}${pago&&c.data_pagamento?` · pago ${new Date(c.data_pagamento+'T12:00:00').toLocaleDateString('pt-BR')}`:''}</div>
               </div>
             </div>
             <div class="custo-val" style="${pago?'color:var(--green)':''}">${fmtMoeda(c.valor)}</div>
@@ -3886,26 +3885,23 @@ async function marcarCustoPago(custoMesId, valor) {
       const dataVenc = document.getElementById('dataVencInput')?.value||null;
       const dataPag = document.getElementById('dataPagInput')?.value||new Date().toISOString().split('T')[0];
       const valNum = parseFloat(valor)||0;
-      // 1. Salvar pagamento
-      await sb.from('financeiro_pagamentos_custos').upsert({
-        custo_id: custoMesId, mes: mesVizualizado,
-        valor_pago: valNum,
+      // Salvar pago direto na tabela financeiro_custos_mes
+      await sb.from('financeiro_custos_mes').update({
+        pago: true,
         data_vencimento: dataVenc||null,
         data_pagamento: dataPag
-      }, {onConflict:'custo_id,mes'});
-      // 2. Registrar saída no extrato
+      }).eq('id', custoMesId);
+      // Atualizar local imediatamente — sem precisar recarregar do banco
+      finCustosMes = finCustosMes.map(c =>
+        c.id===custoMesId ? {...c, pago:true, data_vencimento:dataVenc, data_pagamento:dataPag} : c
+      );
+      // Registrar saída no extrato
       await registrarTransacao(
-        'saida',
-        `Custo fixo — ${custo?.nome||'custo'}`,
-        valNum, dataPag,
-        custo?.categoria||'custo_fixo',
+        'saida', `Custo fixo — ${custo?.nome||'custo'}`,
+        valNum, dataPag, custo?.categoria||'custo_fixo',
         custoMesId, 'custo_fixo', null
       );
       closeMiniModal();
-      // 3. Recarregar finPagamentos corretamente
-      const { data: rp } = await sb.from('financeiro_pagamentos_custos').select('*').eq('mes', mesVizualizado);
-      finPagamentos = rp || [];
-      // Garantir que fica na aba custos
       finTabAtiva = 'custos';
       renderFinanceiro();
       toast('✓ Custo marcado como pago');
@@ -3920,9 +3916,8 @@ async function marcarCustoPago(custoMesId, valor) {
 
 async function togglePagoCusto(custoMesId, estaPago) {
   if (estaPago) {
-    await sb.from('financeiro_pagamentos_custos')
-      .delete().eq('custo_id', custoMesId).eq('mes', mesVizualizado);
-    finPagamentos = finPagamentos.filter(p=>!(p.custo_id===custoMesId&&p.mes===mesVizualizado));
+    await sb.from('financeiro_custos_mes').update({pago:false, data_pagamento:null, data_vencimento:null}).eq('id', custoMesId);
+    finCustosMes = finCustosMes.map(c => c.id===custoMesId ? {...c, pago:false, data_pagamento:null} : c);
     finTabAtiva = 'custos';
     renderFinanceiro();
     toast('Pagamento removido');

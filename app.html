@@ -567,6 +567,26 @@ textarea.fc2{resize:none}
 .fin-card{background:var(--glass);backdrop-filter:blur(14px);border:1px solid var(--glass-border);border-radius:var(--r-l);box-shadow:var(--sh);padding:18px}
 .fin-card-label{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--text-3);margin-bottom:6px}
 .fin-card-val{font-size:24px;font-weight:700;letter-spacing:-.5px}
+.fin-tabs{display:flex;gap:2px;padding:0;background:var(--bg);position:sticky;top:0;z-index:10;border-bottom:1px solid var(--border)}
+.fin-tab{padding:12px 18px;border:none;background:none;font-family:inherit;font-size:13px;font-weight:500;color:var(--text-2);cursor:pointer;border-bottom:2px solid transparent;transition:var(--t);white-space:nowrap}
+.fin-tab.active{color:var(--accent);border-bottom-color:var(--accent);font-weight:700}
+.fin-body{padding:20px;display:flex;flex-direction:column;gap:16px;max-width:960px;margin:0 auto}
+.txn-row{display:flex;align-items:center;gap:12px;padding:11px 0;border-bottom:1px solid var(--border)}
+.txn-row:last-child{border-bottom:none}
+.txn-icon{width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:15px;flex-shrink:0}
+.txn-desc{flex:1;min-width:0}
+.txn-nome{font-size:13px;font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.txn-cat{font-size:11px;color:var(--text-3);margin-top:1px}
+.txn-val{font-size:13px;font-weight:700;text-align:right;white-space:nowrap}
+.caixinha-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
+.caixinha-card{background:var(--glass);border:1px solid var(--glass-border);border-radius:var(--r-l);padding:16px;display:flex;flex-direction:column;gap:6px}
+.caixinha-nome{font-size:13px;font-weight:700}
+.caixinha-saldo{font-size:24px;font-weight:800;color:var(--green);letter-spacing:-.5px}
+.caixinha-meta{font-size:11px;color:var(--text-3)}
+.caixinha-btns{display:flex;gap:6px;margin-top:8px}
+.saldo-bar{padding:20px 24px;background:var(--glass);border:1px solid var(--glass-border);border-radius:var(--r-l)}
+.saldo-valor{font-size:36px;font-weight:800;letter-spacing:-.8px;margin:4px 0}
+.saldo-label{font-size:11px;color:var(--text-3);text-transform:uppercase;letter-spacing:.5px}
 .fin-card-sub{font-size:11px;color:var(--text-3);margin-top:3px}
 .fin-card-verde{border-top:3px solid var(--green)}
 .fin-card-vermelho{border-top:3px solid var(--red)}
@@ -820,7 +840,7 @@ textarea.fc2{resize:none}
 
     <!-- VIEW FINANCEIRO -->
     <div class="view" id="view-financeiro">
-      <div id="finWrap"></div>
+      <div id="finWrap" style="height:100%;overflow-y:auto"></div>
     </div>
 
     <div class="view" id="view-kanban">
@@ -2835,6 +2855,8 @@ async function registrarPagamentoCliente(clienteId, valorContrato, nome) {
         valor_recebido: val, data_pagamento: data,
         status: 'pago', obs
       }, {onConflict:'cliente_id,mes'});
+      // Registrar entrada no extrato automaticamente
+      await registrarTransacao('entrada', `Recebimento — ${nome}`, val, data, 'cliente', clienteId, 'cliente', null);
       closeMiniModal();
       await loadPagamentosClientes();
       renderClientes();
@@ -3222,17 +3244,21 @@ async function deleteCliente(id) {
 
 // ── FINANCEIRO ────────────────────────────
 let finCustos = [], finMeses = [], finPagamentos = [], finVariaveis = [], finCustosMes = [], finCartao = [];
+let empresaTransacoes = [], empresaCaixinhas = [];
+let finTabAtiva = 'visao';
 let mesVizualizado = new Date().toISOString().slice(0,7);
 const mesAtualFin = new Date().toISOString().slice(0,7);
 
 async function loadFinanceiro() {
-  const [rc, rm, rp, rv, rcm, rct] = await Promise.all([
+  const [rc, rm, rp, rv, rcm, rct, rt, rcx] = await Promise.all([
     sb.from('financeiro_custos').select('*').order('categoria'),
     sb.from('financeiro_meses').select('*').order('mes', {ascending:false}).limit(24),
     sb.from('financeiro_pagamentos_custos').select('*').eq('mes', mesVizualizado),
     sb.from('financeiro_variaveis').select('*').eq('mes', mesVizualizado).order('created_at'),
     sb.from('financeiro_custos_mes').select('*').eq('mes', mesVizualizado),
-    sb.from('cartao_compras').select('*').order('data_compra', {ascending:false})
+    sb.from('cartao_compras').select('*').order('data_compra', {ascending:false}),
+    sb.from('empresa_transacoes').select('*').order('data', {ascending:false}).limit(200),
+    sb.from('empresa_caixinhas').select('*').order('created_at')
   ]);
   finCustos = rc.data || [];
   finMeses = rm.data || [];
@@ -3240,6 +3266,52 @@ async function loadFinanceiro() {
   finVariaveis = rv.data || [];
   finCustosMes = rcm.data || [];
   finCartao = rct.data || [];
+  empresaTransacoes = rt.data || [];
+  empresaCaixinhas = rcx.data || [];
+}
+
+// Registrar transação no extrato automaticamente
+async function registrarTransacao(tipo, descricao, valor, data, categoriaOu, referenciaId, referenciaTipo, caixinhaId) {
+  const payload = {
+    tipo, descricao, valor: Math.abs(valor),
+    data: data || new Date().toISOString().split('T')[0],
+    categoria: categoriaOu || null,
+    pago: true,
+    referencia_id: referenciaId || null,
+    referencia_tipo: referenciaTipo || null,
+    caixinha_id: caixinhaId || null
+  };
+  const { data: t } = await sb.from('empresa_transacoes').insert(payload).select().single();
+  if (t) empresaTransacoes.unshift(t);
+  return t;
+}
+
+// Saldo da conta baseado em data âncora
+function calcSaldoConta() {
+  const mesData = finMeses.find(m=>m.mes===mesVizualizado);
+  const caixaInicial = mesData?.caixa_inicial != null ? Number(mesData.caixa_inicial) : null;
+  const caixaData = mesData?.caixa_data || null;
+  if (caixaInicial == null || !caixaData) return null;
+  let saldo = caixaInicial;
+  for (const t of empresaTransacoes) {
+    if (!t.data || t.data < caixaData) continue;
+    if (t.tipo === 'entrada') saldo += Number(t.valor);
+    if (t.tipo === 'saida' || t.tipo === 'cartao_pagamento') saldo -= Number(t.valor);
+    if (t.tipo === 'caixinha_deposito') saldo -= Number(t.valor);
+    if (t.tipo === 'caixinha_resgate') saldo += Number(t.valor);
+  }
+  return saldo;
+}
+
+// Saldo de uma caixinha
+function calcSaldoCaixinha(caixinhaId) {
+  let saldo = 0;
+  for (const t of empresaTransacoes) {
+    if (t.caixinha_id !== caixinhaId) continue;
+    if (t.tipo === 'caixinha_deposito') saldo += Number(t.valor);
+    if (t.tipo === 'caixinha_resgate') saldo -= Number(t.valor);
+  }
+  return saldo;
 }
 
 // Retorna custos do mês atual — lê financeiro_custos_mes diretamente
@@ -3404,19 +3476,24 @@ function getMesesNav() {
   return {ant, prox};
 }
 
-function renderFinanceiro() {
-  const wrap = document.getElementById('finWrap');
+function getMesesNav() {
+  const [ano, mes] = mesVizualizado.split('-').map(Number);
+  const ant = new Date(ano, mes-2, 1).toISOString().slice(0,7);
+  const prox = new Date(ano, mes, 1).toISOString().slice(0,7);
+  return {ant, prox};
+}
+
+function renderFinVisaoGeral() {
   const custosDoMes = getCustosDoMes();
   const parcelasDoMes = getParcelasDoMes();
   const totalCustos = custosDoMes.reduce((s,c)=>s+Number(c.valor),0);
   const totalVariaveis = finVariaveis.reduce((s,v)=>s+Number(v.valor),0);
   const totalCartao = parcelasDoMes.reduce((s,p)=>s+Number(p.valor_parcela||0),0);
   const ativosContrato = clientes.filter(c=>c.status_contrato==='ativo');
-
-  let receitaRecebida = 0, receitaPrevista = 0, receitaAtrasada = 0;
+  let receitaRecebida=0, receitaPrevista=0, receitaAtrasada=0;
+  const hoje = new Date(); hoje.setHours(0,0,0,0);
   ativosContrato.forEach(c => {
     const val = Number(c.valor_contrato||0);
-    const hoje = new Date(); hoje.setHours(0,0,0,0);
     const [ano, mes] = mesVizualizado.split('-').map(Number);
     const dataVenc = c.dia_vencimento ? new Date(ano, mes-1, c.dia_vencimento) : null;
     if (mesVizualizado === mesClientes) {
@@ -3424,249 +3501,325 @@ function renderFinanceiro() {
       if (pag?.status==='pago') receitaRecebida += Number(pag.valor_recebido||val);
       else if (dataVenc && hoje > dataVenc) receitaAtrasada += val;
       else receitaPrevista += val;
-    } else {
-      receitaPrevista += val;
-    }
+    } else receitaPrevista += val;
   });
-
-  const lucro = receitaRecebida - totalCustos - totalVariaveis - totalCartao;
   const custosPagos = finPagamentos.filter(p=>!p.ignorado).reduce((s,p)=>s+Number(p.valor_pago||0),0);
   const variaveisPagas = finVariaveis.filter(v=>v.pago).reduce((s,v)=>s+Number(v.valor),0);
   const totalPago = custosPagos + variaveisPagas;
-  const custosPendentes = totalCustos - custosPagos;
-
+  const lucro = receitaRecebida - totalCustos - totalVariaveis - totalCartao;
+  const saldoConta = calcSaldoConta();
+  const totalCaixinhas = empresaCaixinhas.reduce((s,cx)=>s+calcSaldoCaixinha(cx.id),0);
   const mesData = finMeses.find(m=>m.mes===mesVizualizado);
-  const {ant, prox} = getMesesNav();
-  const [ano, mes] = mesVizualizado.split('-').map(Number);
-  const mesNome = new Date(ano, mes-1, 1).toLocaleDateString('pt-BR',{month:'long',year:'numeric'});
-  const isMesAtual = mesVizualizado === mesAtualFin;
-  const previaJaOferecida = mesData?.previa_oferecida === true;
-
-  // Caixa com data âncora
   const caixaInicial = mesData?.caixa_inicial != null ? Number(mesData.caixa_inicial) : null;
   const caixaData = mesData?.caixa_data || null;
 
-  // Saldo = caixa_inicial + recebimentos APÓS caixaData - pagamentos APÓS caixaData
-  let receitaAposCaixa = 0, custosAposCaixa = 0, variaveisAposCaixa = 0;
-  if (caixaInicial != null && caixaData) {
-    pagamentosClientes.filter(p=>p.status==='pago'&&p.data_pagamento&&p.data_pagamento>=caixaData)
-      .forEach(p=>receitaAposCaixa+=Number(p.valor_recebido||0));
-    finPagamentos.filter(p=>!p.ignorado&&p.data_pagamento&&p.data_pagamento>=caixaData)
-      .forEach(p=>custosAposCaixa+=Number(p.valor_pago||0));
-    finVariaveis.filter(v=>v.pago&&v.data_pagamento&&v.data_pagamento>=caixaData)
-      .forEach(v=>variaveisAposCaixa+=Number(v.valor||0));
-  }
-  const caixaEstimado = caixaInicial != null && caixaData
-    ? caixaInicial + receitaAposCaixa - custosAposCaixa - variaveisAposCaixa
-    : receitaRecebida - totalPago;
-
-  wrap.innerHTML = `
-    <div class="fin-wrap">
-      <!-- NAVEGAÇÃO DE MESES -->
-      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px">
-        <div>
-          <div style="font-size:22px;font-weight:700;letter-spacing:-.4px">Financeiro</div>
-        </div>
-        <div style="display:flex;gap:8px;align-items:center">
-          <!-- Navegação de meses -->
-          <div style="display:flex;align-items:center;gap:4px;background:var(--glass);border:1px solid var(--glass-border);border-radius:980px;padding:4px 8px;backdrop-filter:blur(12px)">
-            <button onclick="navegarMes(-1)" style="background:none;border:none;cursor:pointer;padding:4px 8px;border-radius:20px;font-size:13px;color:var(--text-2);transition:var(--t)" onmouseover="this.style.background='rgba(0,0,0,.06)'" onmouseout="this.style.background='none'">← ${getMesLabel(ant)}</button>
-            <div style="padding:4px 14px;background:var(--accent);color:#fff;border-radius:980px;font-size:12px;font-weight:700">${getMesLabel(mesVizualizado)}${isMesAtual?' · Atual':''}</div>
-            <button onclick="navegarMes(1)" style="background:none;border:none;cursor:pointer;padding:4px 8px;border-radius:20px;font-size:13px;color:var(--text-2);transition:var(--t)" onmouseover="this.style.background='rgba(0,0,0,.06)'" onmouseout="this.style.background='none'">${getMesLabel(prox)} →</button>
-          </div>
-          ${mesData?.previa_oferecida && finPagamentos.length===0 ? `
-          <button class="btn btn-g btn-sm" onclick="reoferecePrevia('${ant}')" title="Trazer custos e variáveis do mês anterior">↓ Trazer de ${getMesLabel(ant)}</button>` : ''}
-        </div>
+  return `
+    <div class="saldo-bar">
+      <div class="saldo-label">💰 Saldo na conta${caixaData?` · âncora ${new Date(caixaData+'T12:00:00').toLocaleDateString('pt-BR')}`:''}</div>
+      <div class="saldo-valor" style="color:${(saldoConta||0)>=0?'var(--accent)':'var(--red)'}">
+        ${saldoConta!=null?fmtMoeda(saldoConta):'<span style="font-size:18px;color:var(--text-3)">Configure o caixa →</span>'}
       </div>
-
-      <!-- CAIXA EDITÁVEL -->
-      <div class="card">
-        <div class="ch">
-          <div class="ct"><span class="ct-i">💰</span> Caixa da Empresa</div>
-          <div style="display:flex;gap:6px">
-            ${!previaJaOferecida?`<button class="btn btn-g btn-sm" onclick="ofertarPreviaManual()">↓ Trazer do mês anterior</button>`:''}
-            <button class="btn btn-g btn-sm" onclick="editarCaixa()">✏️ Editar</button>
-          </div>
-        </div>
-        <div style="padding:16px 20px;display:grid;grid-template-columns:repeat(3,1fr);gap:16px">
-          <div>
-            <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--text-3);margin-bottom:6px">Saldo registrado</div>
-            <div style="font-size:20px;font-weight:700;color:var(--text)">${caixaInicial!=null?fmtMoeda(caixaInicial):'<span style="color:var(--text-3);font-size:14px">Não informado</span>'}</div>
-            ${caixaData?`<div style="font-size:11px;color:var(--text-3);margin-top:3px">📅 em ${new Date(caixaData+'T12:00:00').toLocaleDateString('pt-BR')} · <span style="color:var(--accent)">data âncora</span></div>`:'<div style="font-size:11px;color:var(--orange);margin-top:3px">⚠ Sem data — edite para ativar cálculo real</div>'}
-          </div>
-          <div>
-            <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--text-3);margin-bottom:6px">Receita recebida</div>
-            <div style="font-size:20px;font-weight:700;color:var(--green)">${fmtMoeda(receitaRecebida)}</div>
-            <div style="font-size:11px;color:var(--text-3);margin-top:3px">${ativosContrato.length} contratos ativos</div>
-          </div>
-          <div>
-            <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--text-3);margin-bottom:6px">💰 Saldo estimado</div>
-            <div style="font-size:20px;font-weight:700;color:${caixaEstimado>=0?'var(--accent)':'var(--red)'}">
-              ${fmtMoeda(caixaEstimado)}
-            </div>
-            <div style="font-size:11px;color:var(--text-3);margin-top:3px">${caixaInicial!=null?'saldo inicial + recebido − pagamentos':'recebido − pagamentos'}</div>
-          </div>
-        </div>
+      ${totalCaixinhas>0?`<div style="font-size:13px;color:var(--green);margin-top:4px">+ ${fmtMoeda(totalCaixinhas)} guardado nas caixinhas</div>`:''}
+      ${caixaInicial!=null?`<div style="font-size:11px;color:var(--text-3);margin-top:6px">Saldo registrado: ${fmtMoeda(caixaInicial)} + entradas − saídas após âncora</div>`:''}
+    </div>
+    <div class="fin-resumo">
+      <div class="fin-card fin-card-verde">
+        <div class="fin-card-label">✅ Recebido</div>
+        <div class="fin-card-val" style="color:var(--green)">${fmtMoeda(receitaRecebida)}</div>
+        <div class="fin-card-sub">⏳ ${fmtMoeda(receitaPrevista)} previsto · ⚠ ${fmtMoeda(receitaAtrasada)} atrasado</div>
       </div>
-
-      <!-- RESUMO -->
-      <div class="fin-resumo">
-        <div class="fin-card fin-card-verde">
-          <div class="fin-card-label">✅ Receita recebida</div>
-          <div class="fin-card-val" style="color:var(--green)">${fmtMoeda(receitaRecebida)}</div>
-          <div class="fin-card-sub">⏳ Previsto: ${fmtMoeda(receitaPrevista)} · ⚠ Atrasado: ${fmtMoeda(receitaAtrasada)}</div>
-        </div>
-        <div class="fin-card fin-card-vermelho">
-          <div class="fin-card-label">Custos fixos</div>
-          <div class="fin-card-val" style="color:var(--red)">${fmtMoeda(totalCustos)}</div>
-          <div class="fin-card-sub">${finCustos.filter(c=>c.ativo).length} itens · var: ${fmtMoeda(totalVariaveis)}</div>
-        </div>
-        <div class="fin-card ${caixaEstimado>=0?'fin-card-azul':'fin-card-vermelho'}">
-          <div class="fin-card-label">💰 Caixa atual</div>
-          <div class="fin-card-val" style="color:${caixaEstimado>=0?'var(--accent)':'var(--red)'}">${fmtMoeda(caixaEstimado)}</div>
-          <div class="fin-card-sub">recebido − custos pagos</div>
-        </div>
-        <div class="fin-card ${lucro>=0?'fin-card-verde':'fin-card-vermelho'}">
-          <div class="fin-card-label">Lucro do mês</div>
-          <div class="fin-card-val" style="color:${lucro>=0?'var(--green)':'var(--red)'}">${fmtMoeda(lucro)}</div>
-          <div class="fin-card-sub">margem ${receitaRecebida?Math.round(lucro/receitaRecebida*100):0}% · anual ${fmtMoeda(lucro*12)}</div>
-        </div>
+      <div class="fin-card fin-card-vermelho">
+        <div class="fin-card-label">📌 Custos do mês</div>
+        <div class="fin-card-val" style="color:var(--red)">${fmtMoeda(totalCustos+totalVariaveis+totalCartao)}</div>
+        <div class="fin-card-sub">Fixos ${fmtMoeda(totalCustos)} · Var ${fmtMoeda(totalVariaveis)} · Cart ${fmtMoeda(totalCartao)}</div>
       </div>
-
-      <!-- BARRA PROGRESSO PAGAMENTOS -->
-      <div style="display:flex;flex-direction:column;gap:6px">
-        <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text-3);font-weight:600">
-          <span>PAGO ${fmtMoeda(custosPagos)}</span>
-          <span>${totalCustos?Math.round(custosPagos/totalCustos*100):0}%</span>
-          <span>TOTAL ${fmtMoeda(totalCustos)}</span>
-        </div>
-        <div style="height:8px;background:rgba(0,0,0,.06);border-radius:4px;overflow:hidden">
-          <div style="height:100%;background:var(--green);border-radius:4px;width:${totalCustos?Math.min(100,Math.round(custosPagos/totalCustos*100)):0}%;transition:width .5s ease"></div>
-        </div>
+      <div class="fin-card ${lucro>=0?'fin-card-verde':'fin-card-vermelho'}">
+        <div class="fin-card-label">📈 Lucro estimado</div>
+        <div class="fin-card-val" style="color:${lucro>=0?'var(--green)':'var(--red)'}">${fmtMoeda(lucro)}</div>
+        <div class="fin-card-sub">margem ${receitaRecebida?Math.round(lucro/receitaRecebida*100):0}% · anual ${fmtMoeda(lucro*12)}</div>
       </div>
-
-      <!-- CUSTOS FIXOS -->
-      <div class="card">
-        <div class="ch">
-          <div class="ct"><span class="ct-i">📌</span> Custos Fixos — ${mesNome}</div>
-          <button class="btn btn-p btn-sm" onclick="openCustoModal()">+ Adicionar</button>
-        </div>
-        <div id="custosLista">
-          ${custosDoMes.length ? custosDoMes.map(c => {
-            const pag = finPagamentos.find(p => p.custo_id === c.id && !p.ignorado);
-            const pago = !!pag;
-            return `
-            <div class="custo-row">
-              <div style="display:flex;align-items:center;gap:10px;flex:1;min-width:0;cursor:pointer" onclick="togglePagoCusto('${c.id}',${pago})">
-                <div style="width:22px;height:22px;border-radius:50%;border:2px solid ${pago?'var(--green)':'var(--border-s)'};background:${pago?'var(--green)':'transparent'};display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:var(--t)">
-                  ${pago?'<svg width="10" height="8" viewBox="0 0 10 8" fill="none"><path d="M1 4l3 3 5-6" stroke="#fff" stroke-width="1.8" stroke-linecap="round"/></svg>':''}
-                </div>
-                <div>
-                  <div class="custo-nome" style="${pago?'text-decoration:line-through;color:var(--text-3)':''}">${esc(c.nome)}</div>
-                  <div class="custo-cat">${c.categoria||''}${c.dia_vencimento?` · vence dia ${c.dia_vencimento}`:''}${pago&&pag.data_pagamento?` · pago em ${new Date(pag.data_pagamento+'T12:00:00').toLocaleDateString('pt-BR')}`:pago?'':' · clique para marcar pago'}</div>
-                </div>
-              </div>
-              <div class="custo-val" style="${pago?'color:var(--green)':''}">${fmtMoeda(c.valor)}</div>
-              <div style="display:flex;gap:4px">
-                ${!pago?`<button class="btn btn-p btn-sm" onclick="marcarCustoPago('${c.id}','${c.valor}')">✓ Pago</button>`:''}
-                ${pago?`<button class="btn btn-g btn-sm" onclick="togglePagoCusto('${c.id}',true)" style="color:var(--red)">✕</button>`:''}
-                <button class="btn btn-g btn-sm" onclick="openCustoModal('${c.id}')">✏️</button>
-              </div>
-            </div>`}).join('')
-            : '<div class="h-emp">Nenhum custo neste mês · clique em "+ Adicionar" ou use "↓ Trazer do mês anterior"</div>'}
-        </div>
+      <div class="fin-card fin-card-azul">
+        <div class="fin-card-label">🐷 Caixinhas</div>
+        <div class="fin-card-val" style="color:var(--accent)">${fmtMoeda(totalCaixinhas)}</div>
+        <div class="fin-card-sub">${empresaCaixinhas.length} caixinha${empresaCaixinhas.length!==1?'s':''}</div>
       </div>
-
-      <!-- CARTÃO DE CRÉDITO -->
-      <div class="card">
-        <div class="ch">
-          <div class="ct"><span class="ct-i">💳</span> Cartão de Crédito</div>
-          <button class="btn btn-p btn-sm" onclick="openCartaoModal()">+ Compra</button>
-        </div>
-        <div>
-          ${parcelasDoMes.length ? parcelasDoMes.map(p => `
-            <div class="custo-row">
-              <div style="flex:1;min-width:0">
-                <div class="custo-nome">${esc(p.descricao)}</div>
-                <div class="custo-cat">Parcela ${p.parcela_num}/${p.qtd_parcelas} · compra em ${p.data_compra?new Date(p.data_compra+'T12:00:00').toLocaleDateString('pt-BR'):'—'}</div>
-              </div>
-              <div class="custo-val">${fmtMoeda(p.valor_parcela)}</div>
-              <button class="btn btn-g btn-sm" onclick="openCartaoModal('${p.id}')">✏️</button>
-              <button class="btn btn-g btn-sm" style="color:var(--red)" onclick="deleteCartao('${p.id}')">🗑</button>
-            </div>`).join('')
-          : '<div class="h-emp">Nenhuma parcela neste mês</div>'}
-          ${finCartao.length ? `
-          <div style="padding:8px 20px;border-top:1px solid var(--border)">
-            <button class="btn btn-g btn-sm" onclick="verTodasCompras()" style="font-size:11px">Ver todas as compras (${finCartao.length})</button>
-          </div>` : ''}
-        </div>
+    </div>
+    ${totalCustos>0?`
+    <div style="display:flex;flex-direction:column;gap:6px">
+      <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text-3);font-weight:600">
+        <span>PAGO ${fmtMoeda(totalPago)}</span>
+        <span>${totalCustos?Math.round(totalPago/totalCustos*100):0}%</span>
+        <span>TOTAL ${fmtMoeda(totalCustos)}</span>
       </div>
-
-      <!-- CONTAS VARIÁVEIS -->
-      <div class="card">
-        <div class="ch">
-          <div class="ct"><span class="ct-i">📊</span> Contas Variáveis — ${mesNome}</div>
-          <button class="btn btn-p btn-sm" onclick="openVariavelModal()">+ Adicionar</button>
-        </div>
-        <div id="variaveisLista">
-          ${finVariaveis.length ? finVariaveis.map(v => `
-            <div class="custo-row ${v.pago?'':''}">
-              <div style="display:flex;align-items:center;gap:10px;flex:1;min-width:0;cursor:pointer" onclick="togglePagoVariavel('${v.id}',${v.pago})">
-                <div style="width:22px;height:22px;border-radius:50%;border:2px solid ${v.pago?'var(--green)':'var(--border-s)'};background:${v.pago?'var(--green)':'transparent'};display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:var(--t)">
-                  ${v.pago?'<svg width="10" height="8" viewBox="0 0 10 8" fill="none"><path d="M1 4l3 3 5-6" stroke="#fff" stroke-width="1.8" stroke-linecap="round"/></svg>':''}
-                </div>
-                <div>
-                  <div class="custo-nome" style="${v.pago?'text-decoration:line-through;color:var(--text-3)':''}">${esc(v.nome)}</div>
-                  <div class="custo-cat">${esc(v.categoria||'variável')}${v.data_vencimento?` · vence ${new Date(v.data_vencimento+'T12:00:00').toLocaleDateString('pt-BR')}`:''} ${v.pago&&v.data_pagamento?`· pago em ${new Date(v.data_pagamento+'T12:00:00').toLocaleDateString('pt-BR')}`:''} ${v.obs?`· ${esc(v.obs)}`:''}</div>
-                </div>
-              </div>
-              <div class="custo-val" style="${v.pago?'color:var(--green)':''}">${fmtMoeda(v.valor)}</div>
-              <div style="display:flex;gap:4px">
-                <button class="btn btn-g btn-sm" onclick="openVariavelModal('${v.id}')">✏️</button>
-                <button class="btn btn-g btn-sm" style="color:var(--red)" onclick="deleteVariavel('${v.id}')">🗑</button>
-              </div>
-            </div>`).join('')
-          : '<div class="h-emp">Nenhuma conta variável neste mês</div>'}
-          ${finVariaveis.length ? `
-          <div style="padding:10px 20px;border-top:1px solid var(--border);display:flex;justify-content:space-between;align-items:center">
-            <span style="font-size:12px;color:var(--text-3)">${finVariaveis.filter(v=>v.pago).length} de ${finVariaveis.length} pago(s)</span>
-            <span style="font-size:13px;font-weight:700;color:var(--red)">Total: ${fmtMoeda(finVariaveis.reduce((s,v)=>s+Number(v.valor),0))}</span>
-          </div>` : ''}
-        </div>
+      <div style="height:8px;background:rgba(0,0,0,.06);border-radius:4px;overflow:hidden">
+        <div style="height:100%;background:var(--green);border-radius:4px;width:${totalCustos?Math.min(100,Math.round(totalPago/totalCustos*100)):0}%;transition:width .5s"></div>
       </div>
-
-      <!-- HISTÓRICO MENSAL -->
-      <div class="card">
-        <div class="ch">
-          <div class="ct"><span class="ct-i">📈</span> Histórico Mensal</div>
-          <button class="btn btn-g btn-sm" onclick="openMesModal()">+ Registrar mês</button>
-        </div>
-        <div>
-          ${finMeses.length ? finMeses.map(m=>{
-            const rec = Number(m.receita_realizada||0);
-            const cus = totalCustos + Number(m.custos_extras||0);
-            const luc = rec - cus;
-            const maxVal = Math.max(rec, cus, 1);
-            const isSel = m.mes === mesVizualizado;
-            return `
-              <div class="mes-row" style="${isSel?'background:var(--accent-l)':''}" onclick="openMesModal('${m.id}')">
-                <div class="mes-label" style="${isSel?'color:var(--accent);font-weight:700':''}">${m.mes}</div>
-                <div class="mes-bar-wrap">
-                  <div class="mes-bar-rec" style="width:${Math.round(rec/maxVal*100)}%"></div>
-                  <div class="mes-bar-cus" style="width:${Math.round(cus/maxVal*100)}%"></div>
-                </div>
-                <div class="mes-vals">
-                  <span style="color:var(--green);font-weight:600">${fmtMoeda(rec)}</span>
-                  <span class="mes-lucro ${luc>=0?'pos':'neg'}">${luc>=0?'+':''}${fmtMoeda(luc)}</span>
-                </div>
-                ${m.fechado?'<span style="font-size:10px;color:var(--text-3)">🔒</span>':''}
-              </div>`;
-          }).join('')
-          : '<div class="h-emp">Nenhum mês registrado ainda</div>'}
-        </div>
+    </div>`:''}
+    <div class="card">
+      <div class="ch">
+        <div class="ct"><span class="ct-i">☰</span> Últimas movimentações</div>
+        <button class="btn btn-g btn-sm" onclick="finTabAtiva='extrato';renderFinanceiro()">Ver tudo</button>
+      </div>
+      <div style="padding:0 20px">
+        ${renderTxnLista(empresaTransacoes.slice(0,6))}
+        ${empresaTransacoes.length===0?'<div class="h-emp">Nenhuma movimentação registrada</div>':''}
       </div>
     </div>`;
 }
+
+function renderFinExtrato() {
+  const txnsMes = empresaTransacoes.filter(t=>t.data&&t.data.startsWith(mesVizualizado));
+  const totalEntradas = txnsMes.filter(t=>t.tipo==='entrada').reduce((s,t)=>s+Number(t.valor),0);
+  const totalSaidas = txnsMes.filter(t=>['saida','cartao_pagamento'].includes(t.tipo)).reduce((s,t)=>s+Number(t.valor),0);
+  const totalCaixinha = txnsMes.filter(t=>t.tipo==='caixinha_deposito').reduce((s,t)=>s+Number(t.valor),0);
+  return `
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px">
+      <div style="font-size:18px;font-weight:700">Extrato — ${getMesLabel(mesVizualizado)}</div>
+      <button class="btn btn-p btn-sm" onclick="openTxnManualModal()">+ Lançamento</button>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px">
+      <div style="background:rgba(52,199,89,.08);border:1px solid rgba(52,199,89,.2);border-radius:12px;padding:12px">
+        <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#1a7a3c">Entradas</div>
+        <div style="font-size:18px;font-weight:700;color:var(--green);margin-top:4px">${fmtMoeda(totalEntradas)}</div>
+      </div>
+      <div style="background:rgba(255,59,48,.08);border:1px solid rgba(255,59,48,.2);border-radius:12px;padding:12px">
+        <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--red)">Saídas</div>
+        <div style="font-size:18px;font-weight:700;color:var(--red);margin-top:4px">${fmtMoeda(totalSaidas)}</div>
+      </div>
+      <div style="background:rgba(0,113,227,.06);border:1px solid rgba(0,113,227,.15);border-radius:12px;padding:12px">
+        <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--accent)">Caixinhas</div>
+        <div style="font-size:18px;font-weight:700;color:var(--accent);margin-top:4px">${fmtMoeda(totalCaixinha)}</div>
+      </div>
+    </div>
+    <div class="card">
+      <div style="padding:0 20px">
+        ${txnsMes.length?renderTxnLista(txnsMes):'<div class="h-emp">Nenhuma movimentação em '+getMesLabel(mesVizualizado)+'</div>'}
+      </div>
+    </div>`;
+}
+
+function renderTxnLista(txns) {
+  if (!txns.length) return '';
+  const tipoInfo = {
+    entrada:{bg:'rgba(52,199,89,.15)',icon:'⬇️',cor:'var(--green)',sinal:'+'},
+    saida:{bg:'rgba(255,59,48,.12)',icon:'⬆️',cor:'var(--red)',sinal:'-'},
+    caixinha_deposito:{bg:'rgba(0,113,227,.1)',icon:'🐷',cor:'var(--accent)',sinal:'-'},
+    caixinha_resgate:{bg:'rgba(52,199,89,.12)',icon:'🐷',cor:'var(--green)',sinal:'+'},
+    cartao_pagamento:{bg:'rgba(255,149,0,.1)',icon:'💳',cor:'var(--orange)',sinal:'-'},
+  };
+  return txns.map(t => {
+    const info = tipoInfo[t.tipo]||{bg:'rgba(0,0,0,.06)',icon:'💰',cor:'var(--text)',sinal:''};
+    const cx = t.caixinha_id ? empresaCaixinhas.find(c=>c.id===t.caixinha_id) : null;
+    return `<div class="txn-row">
+      <div class="txn-icon" style="background:${info.bg}">${info.icon}</div>
+      <div class="txn-desc">
+        <div class="txn-nome">${esc(t.descricao)}</div>
+        <div class="txn-cat">${t.data?new Date(t.data+'T12:00:00').toLocaleDateString('pt-BR'):''}${t.categoria?' · '+esc(t.categoria):''}${cx?' · '+esc(cx.nome):''}</div>
+      </div>
+      <div>
+        <div class="txn-val" style="color:${info.cor}">${info.sinal}${fmtMoeda(t.valor)}</div>
+        ${t.referencia_tipo?`<div style="font-size:10px;color:var(--text-3);text-align:right">${t.referencia_tipo}</div>`:''}
+      </div>
+      <button onclick="deleteTxn('${t.id}')" style="background:none;border:none;cursor:pointer;color:var(--text-3);font-size:14px;padding:4px;opacity:.5">✕</button>
+    </div>`;
+  }).join('');
+}
+
+function renderFinCaixinhas() {
+  const total = empresaCaixinhas.reduce((s,cx)=>s+calcSaldoCaixinha(cx.id),0);
+  return `
+    <div style="display:flex;align-items:center;justify-content:space-between">
+      <div>
+        <div style="font-size:18px;font-weight:700">🐷 Caixinhas</div>
+        <div style="font-size:13px;color:var(--text-3);margin-top:2px">Total guardado: <strong style="color:var(--green)">${fmtMoeda(total)}</strong></div>
+      </div>
+      <button class="btn btn-p" onclick="openCaixinhaModal()">+ Nova caixinha</button>
+    </div>
+    <div class="caixinha-grid">
+      ${empresaCaixinhas.map(cx => {
+        const saldo = calcSaldoCaixinha(cx.id);
+        const pct = cx.meta ? Math.min(100, Math.round(saldo/cx.meta*100)) : null;
+        return `<div class="caixinha-card">
+          <div style="display:flex;align-items:center;justify-content:space-between">
+            <div style="font-size:22px">${cx.emoji||'🐷'}</div>
+            <button onclick="openCaixinhaModal('${cx.id}')" style="background:none;border:none;cursor:pointer;color:var(--text-3);font-size:12px">✏️</button>
+          </div>
+          <div class="caixinha-nome">${esc(cx.nome)}</div>
+          <div class="caixinha-saldo">${fmtMoeda(saldo)}</div>
+          ${cx.meta?`<div class="caixinha-meta">Meta: ${fmtMoeda(cx.meta)} · ${pct}%</div>
+          <div style="height:6px;background:rgba(0,0,0,.06);border-radius:3px;overflow:hidden">
+            <div style="height:100%;background:var(--green);width:${pct}%;transition:width .5s"></div>
+          </div>`:''}
+          <div class="caixinha-btns">
+            <button class="btn btn-p" style="flex:1;justify-content:center;font-size:12px" onclick="openMovCaixinha('${cx.id}','deposito')">+ Guardar</button>
+            <button class="btn btn-g" style="flex:1;justify-content:center;font-size:12px" onclick="openMovCaixinha('${cx.id}','resgate')">↩ Resgatar</button>
+          </div>
+        </div>`;
+      }).join('')}
+      ${empresaCaixinhas.length===0?'<div class="h-emp" style="grid-column:1/-1">Nenhuma caixinha criada</div>':''}
+    </div>
+    ${empresaTransacoes.filter(t=>['caixinha_deposito','caixinha_resgate'].includes(t.tipo)).length>0?`
+    <div class="card">
+      <div class="ch"><div class="ct"><span class="ct-i">📋</span> Histórico caixinhas</div></div>
+      <div style="padding:0 20px">
+        ${renderTxnLista(empresaTransacoes.filter(t=>['caixinha_deposito','caixinha_resgate'].includes(t.tipo)).slice(0,20))}
+      </div>
+    </div>`:''}`;
+}
+
+function renderFinCustos() {
+  const custosDoMes = getCustosDoMes();
+  const [ano, mes] = mesVizualizado.split('-').map(Number);
+  const mesNome = new Date(ano, mes-1, 1).toLocaleDateString('pt-BR',{month:'long',year:'numeric'});
+  return `
+    <div class="card">
+      <div class="ch">
+        <div class="ct"><span class="ct-i">📌</span> Custos Fixos — ${mesNome}</div>
+        <button class="btn btn-p btn-sm" onclick="openCustoModal()">+ Adicionar</button>
+      </div>
+      <div>
+        ${custosDoMes.length ? custosDoMes.map(c => {
+          const pag = finPagamentos.find(p=>p.custo_id===c.id&&!p.ignorado);
+          const pago = !!pag;
+          return `<div class="custo-row">
+            <div style="display:flex;align-items:center;gap:10px;flex:1;min-width:0;cursor:pointer" onclick="togglePagoCusto('${c.id}',${pago})">
+              <div style="width:22px;height:22px;border-radius:50%;border:2px solid ${pago?'var(--green)':'var(--border-s)'};background:${pago?'var(--green)':'transparent'};display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:var(--t)">
+                ${pago?'<svg width="10" height="8" viewBox="0 0 10 8" fill="none"><path d="M1 4l3 3 5-6" stroke="#fff" stroke-width="1.8" stroke-linecap="round"/></svg>':''}
+              </div>
+              <div>
+                <div class="custo-nome" style="${pago?'text-decoration:line-through;color:var(--text-3)':''}">${esc(c.nome)}</div>
+                <div class="custo-cat">${c.categoria||''}${c.dia_vencimento?` · vence dia ${c.dia_vencimento}`:''}${pago&&pag.data_pagamento?` · pago ${new Date(pag.data_pagamento+'T12:00:00').toLocaleDateString('pt-BR')}`:''}</div>
+              </div>
+            </div>
+            <div class="custo-val" style="${pago?'color:var(--green)':''}">${fmtMoeda(c.valor)}</div>
+            <div style="display:flex;gap:4px">
+              ${!pago?`<button class="btn btn-p btn-sm" onclick="marcarCustoPago('${c.id}','${c.valor}')">✓ Pago</button>`:''}
+              ${pago?`<button class="btn btn-g btn-sm" onclick="togglePagoCusto('${c.id}',true)" style="color:var(--red)">✕</button>`:''}
+              <button class="btn btn-g btn-sm" onclick="openCustoModal('${c.id}')">✏️</button>
+            </div>
+          </div>`;}).join('')
+          : '<div class="h-emp">Nenhum custo neste mês · "+ Adicionar" ou "↓ Trazer do mês anterior"</div>'}
+      </div>
+    </div>
+    <div class="card">
+      <div class="ch">
+        <div class="ct"><span class="ct-i">📊</span> Contas Variáveis</div>
+        <button class="btn btn-p btn-sm" onclick="openVariavelModal()">+ Adicionar</button>
+      </div>
+      <div>
+        ${finVariaveis.length ? finVariaveis.map(v=>`
+          <div class="custo-row">
+            <div style="display:flex;align-items:center;gap:10px;flex:1;min-width:0;cursor:pointer" onclick="togglePagoVariavel('${v.id}',${v.pago})">
+              <div style="width:22px;height:22px;border-radius:50%;border:2px solid ${v.pago?'var(--green)':'var(--border-s)'};background:${v.pago?'var(--green)':'transparent'};display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:var(--t)">
+                ${v.pago?'<svg width="10" height="8" viewBox="0 0 10 8" fill="none"><path d="M1 4l3 3 5-6" stroke="#fff" stroke-width="1.8" stroke-linecap="round"/></svg>':''}
+              </div>
+              <div>
+                <div class="custo-nome" style="${v.pago?'text-decoration:line-through;color:var(--text-3)':''}">${esc(v.nome)}</div>
+                <div class="custo-cat">${v.categoria||'variável'}${v.data_vencimento?` · vence ${new Date(v.data_vencimento+'T12:00:00').toLocaleDateString('pt-BR')}`:''}</div>
+              </div>
+            </div>
+            <div class="custo-val" style="${v.pago?'color:var(--green)':''}">${fmtMoeda(v.valor)}</div>
+            <div style="display:flex;gap:4px">
+              <button class="btn btn-g btn-sm" onclick="openVariavelModal('${v.id}')">✏️</button>
+              <button class="btn btn-g btn-sm" style="color:var(--red)" onclick="deleteVariavel('${v.id}')">🗑</button>
+            </div>
+          </div>`).join('')
+          : '<div class="h-emp">Nenhuma conta variável neste mês</div>'}
+      </div>
+    </div>`;
+}
+
+function renderFinCartao() {
+  const parcelasDoMes = getParcelasDoMes();
+  const [ano, mes] = mesVizualizado.split('-').map(Number);
+  const mesNome = new Date(ano, mes-1, 1).toLocaleDateString('pt-BR',{month:'long',year:'numeric'});
+  return `
+    <div class="card">
+      <div class="ch">
+        <div class="ct"><span class="ct-i">💳</span> Parcelas em ${mesNome}</div>
+        <button class="btn btn-p btn-sm" onclick="openCartaoModal()">+ Compra</button>
+      </div>
+      <div>
+        ${parcelasDoMes.length?parcelasDoMes.map(p=>`
+          <div class="custo-row">
+            <div style="flex:1;min-width:0">
+              <div class="custo-nome">${esc(p.descricao)}</div>
+              <div class="custo-cat">Parcela ${p.parcela_num}/${p.qtd_parcelas} · compra ${p.data_compra?new Date(p.data_compra+'T12:00:00').toLocaleDateString('pt-BR'):'—'}</div>
+            </div>
+            <div class="custo-val">${fmtMoeda(p.valor_parcela)}</div>
+            <button class="btn btn-g btn-sm" onclick="openCartaoModal('${p.id}')">✏️</button>
+          </div>`).join('')
+          :'<div class="h-emp">Nenhuma parcela em '+mesNome+'</div>'}
+      </div>
+    </div>
+    <div class="card">
+      <div class="ch"><div class="ct"><span class="ct-i">🧾</span> Todas as compras (${finCartao.length})</div></div>
+      <div>
+        ${finCartao.map(c=>{
+          const restantes=(c.qtd_parcelas||1)-(c.pago_ate||0);
+          return `<div class="custo-row">
+            <div style="flex:1;min-width:0">
+              <div class="custo-nome">${esc(c.descricao)}</div>
+              <div class="custo-cat">${c.qtd_parcelas}x de ${fmtMoeda(c.valor_parcela)} · ${restantes} restantes · ${fmtMoeda(restantes*Number(c.valor_parcela))}</div>
+            </div>
+            <div class="custo-val">${fmtMoeda(c.valor_total||c.valor_parcela*c.qtd_parcelas)}</div>
+            <button class="btn btn-g btn-sm" onclick="openCartaoModal('${c.id}')">✏️</button>
+            <button class="btn btn-g btn-sm" style="color:var(--red)" onclick="deleteCartao('${c.id}')">🗑</button>
+          </div>`;}).join('')}
+        ${finCartao.length===0?'<div class="h-emp">Nenhuma compra cadastrada</div>':''}
+      </div>
+    </div>`;
+}
+
+function renderFinanceiro() {
+  const wrap = document.getElementById('finWrap');
+  // Abas do financeiro
+  const tabs = [
+    {id:'visao', label:'📊 Visão Geral'},
+    {id:'extrato', label:'☰ Extrato'},
+    {id:'caixinhas', label:'🐷 Caixinhas'},
+    {id:'custos', label:'📌 Custos'},
+    {id:'cartao', label:'💳 Cartão'},
+  ];
+
+  wrap.innerHTML = `
+    <div style="height:100%;overflow-y:auto">
+      <!-- ABAS -->
+      <div class="fin-tabs">
+        ${tabs.map(t=>`<button class="fin-tab ${finTabAtiva===t.id?'active':''}" onclick="finTabAtiva='${t.id}';renderFinanceiro()">${t.label}</button>`).join('')}
+      </div>
+      <!-- NAVEGAÇÃO MESES (só nas abas que precisam) -->
+      ${['visao','custos','cartao'].includes(finTabAtiva) ? renderFinNavMeses() : ''}
+      <!-- CONTEÚDO -->
+      <div class="fin-body" id="finBody">
+        ${finTabAtiva==='visao' ? renderFinVisaoGeral() : ''}
+        ${finTabAtiva==='extrato' ? renderFinExtrato() : ''}
+        ${finTabAtiva==='caixinhas' ? renderFinCaixinhas() : ''}
+        ${finTabAtiva==='custos' ? renderFinCustos() : ''}
+        ${finTabAtiva==='cartao' ? renderFinCartao() : ''}
+      </div>
+    </div>`;
+}
+
+function renderFinNavMeses() {
+  const {ant, prox} = getMesesNav();
+  const isMesAtual = mesVizualizado === mesAtualFin;
+  const mesData = finMeses.find(m=>m.mes===mesVizualizado);
+  const previaJaOferecida = mesData?.previa_oferecida === true;
+  return `
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 20px;border-bottom:1px solid var(--border);flex-wrap:wrap;gap:8px">
+      <div style="display:flex;align-items:center;gap:4px;background:var(--glass);border:1px solid var(--glass-border);border-radius:980px;padding:3px 6px">
+        <button onclick="navegarMes(-1)" style="background:none;border:none;cursor:pointer;padding:4px 10px;border-radius:20px;font-size:13px;color:var(--text-2)">← ${getMesLabel(ant)}</button>
+        <div style="padding:4px 14px;background:var(--accent);color:#fff;border-radius:980px;font-size:12px;font-weight:700">${getMesLabel(mesVizualizado)}${isMesAtual?' · Atual':''}</div>
+        <button onclick="navegarMes(1)" style="background:none;border:none;cursor:pointer;padding:4px 10px;border-radius:20px;font-size:13px;color:var(--text-2)">${getMesLabel(prox)} →</button>
+      </div>
+      <div style="display:flex;gap:6px">
+        ${!previaJaOferecida?`<button class="btn btn-g btn-sm" onclick="ofertarPreviaManual()">↓ Trazer do mês anterior</button>`:''}
+        <button class="btn btn-g btn-sm" onclick="editarCaixa()">✏️ Editar caixa</button>
+      </div>
+    </div>`;
+}
+
 
 async function editarCaixa() {
   const mesData = finMeses.find(m=>m.mes===mesVizualizado);
@@ -3763,6 +3916,150 @@ async function togglePagoCusto(custoMesId, estaPago) {
     const custo = finCustosMes.find(c=>c.id===custoMesId);
     if (custo) marcarCustoPago(custoMesId, custo.valor);
   }
+}
+
+// ── CAIXINHAS ─────────────────────────────
+function openCaixinhaModal(id = null) {
+  const cx = id ? empresaCaixinhas.find(x=>x.id===id) : null;
+  const overlay = document.createElement('div');
+  overlay.className = 'overlay open';
+  overlay.id = 'caixinhaOverlay';
+  overlay.onclick = e => { if(e.target===overlay) overlay.remove(); };
+  overlay.innerHTML = `
+    <div class="modal">
+      <div class="m-drag"></div>
+      <div class="mt">${cx?'Editar Caixinha':'Nova Caixinha'}</div>
+      <div class="fr">
+        <div class="fg" style="max-width:70px"><label class="fl">Emoji</label><input class="fc2" id="cx-emoji" value="${cx?.emoji||'🐷'}" maxlength="2"></div>
+        <div class="fg"><label class="fl">Nome</label><input class="fc2" id="cx-nome" value="${esc(cx?.nome||'')}" placeholder="Ex: Reserva, Impostos, Férias"></div>
+      </div>
+      <div class="fg"><label class="fl">Meta (R$) — opcional</label><input class="fc2" id="cx-meta" type="number" value="${cx?.meta||''}" placeholder="0,00"></div>
+      <div class="mf">
+        <button class="btn btn-g" onclick="document.getElementById('caixinhaOverlay').remove()">Cancelar</button>
+        ${cx?`<button class="btn btn-red" onclick="deleteCaixinha('${cx.id}')">Excluir</button>`:''}
+        <button class="btn btn-p" onclick="saveCaixinha('${id||''}')">Salvar</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+}
+
+async function saveCaixinha(id) {
+  const payload = {
+    nome: document.getElementById('cx-nome').value.trim(),
+    emoji: document.getElementById('cx-emoji').value.trim()||'🐷',
+    meta: parseFloat(document.getElementById('cx-meta').value)||null
+  };
+  if (!payload.nome) { toast('Nome é obrigatório'); return; }
+  if (id) {
+    await sb.from('empresa_caixinhas').update(payload).eq('id', id);
+    const idx = empresaCaixinhas.findIndex(c=>c.id===id);
+    if (idx>=0) Object.assign(empresaCaixinhas[idx], payload);
+  } else {
+    const { data } = await sb.from('empresa_caixinhas').insert(payload).select().single();
+    if (data) empresaCaixinhas.push(data);
+  }
+  document.getElementById('caixinhaOverlay')?.remove();
+  renderFinanceiro();
+  toast('✓ Caixinha salva');
+}
+
+async function deleteCaixinha(id) {
+  if (!confirm('Excluir esta caixinha?')) return;
+  await sb.from('empresa_caixinhas').delete().eq('id', id);
+  empresaCaixinhas = empresaCaixinhas.filter(c=>c.id!==id);
+  document.getElementById('caixinhaOverlay')?.remove();
+  renderFinanceiro();
+}
+
+function openMovCaixinha(caixinhaId, acao) {
+  const cx = empresaCaixinhas.find(c=>c.id===caixinhaId);
+  const saldo = calcSaldoCaixinha(caixinhaId);
+  showMiniModal(
+    acao==='deposito'?`🐷 Guardar em "${cx?.nome}"` : `↩ Resgatar de "${cx?.nome}"`,
+    acao==='deposito'?`Saldo atual: ${fmtMoeda(saldo)}` : `Disponível: ${fmtMoeda(saldo)}`,
+    []
+  );
+  document.getElementById('fuMiniSub').innerHTML = `
+    <div style="display:flex;flex-direction:column;gap:10px;margin-top:4px">
+      <div><label style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--text-3);display:block;margin-bottom:4px">Valor (R$)</label>
+        <input type="number" id="movCxVal" placeholder="0,00" style="width:100%;background:rgba(0,0,0,.04);border:1.5px solid var(--border-s);border-radius:8px;padding:9px 12px;font-family:inherit;font-size:14px;font-weight:600;outline:none">
+      </div>
+      <div><label style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--text-3);display:block;margin-bottom:4px">Data</label>
+        <input type="date" id="movCxData" value="${new Date().toISOString().split('T')[0]}" style="width:100%;background:rgba(0,0,0,.04);border:1.5px solid var(--border-s);border-radius:8px;padding:9px 12px;font-family:inherit;font-size:13px;outline:none">
+      </div>
+      <div><label style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--text-3);display:block;margin-bottom:4px">Descrição</label>
+        <input type="text" id="movCxDesc" placeholder="${acao==='deposito'?'Ex: Guardando para impostos':'Ex: Resgate para pagamento'}" style="width:100%;background:rgba(0,0,0,.04);border:1.5px solid var(--border-s);border-radius:8px;padding:9px 12px;font-family:inherit;font-size:13px;outline:none">
+      </div>
+    </div>`;
+  document.getElementById('fuMiniBtns').innerHTML = '';
+  [
+    { label: acao==='deposito'?'🐷 Guardar':'↩ Resgatar', cls: 'btn-p', fn: async () => {
+      const val = parseFloat(document.getElementById('movCxVal')?.value)||0;
+      if (!val) { toast('Informe o valor'); return; }
+      if (acao==='resgate' && val > saldo) { toast('Saldo insuficiente'); return; }
+      const data = document.getElementById('movCxData')?.value||new Date().toISOString().split('T')[0];
+      const desc = document.getElementById('movCxDesc')?.value||(acao==='deposito'?`Depósito em ${cx?.nome}`:`Resgate de ${cx?.nome}`);
+      await registrarTransacao(acao==='deposito'?'caixinha_deposito':'caixinha_resgate', desc, val, data, 'caixinha', null, 'manual', caixinhaId);
+      closeMiniModal();
+      renderFinanceiro();
+      toast(acao==='deposito'?'✓ Guardado na caixinha':'✓ Resgatado da caixinha');
+    }},
+    { label: 'Cancelar', cls: 'btn-g', fn: closeMiniModal }
+  ].forEach(b => {
+    const el = document.createElement('button');
+    el.className = 'btn '+b.cls; el.textContent = b.label; el.onclick = b.fn;
+    document.getElementById('fuMiniBtns').appendChild(el);
+  });
+}
+
+function openTxnManualModal() {
+  const overlay = document.createElement('div');
+  overlay.className = 'overlay open';
+  overlay.id = 'txnOverlay';
+  overlay.onclick = e => { if(e.target===overlay) overlay.remove(); };
+  overlay.innerHTML = `
+    <div class="modal">
+      <div class="m-drag"></div>
+      <div class="mt">+ Lançamento Manual</div>
+      <div class="fg"><label class="fl">Tipo</label>
+        <select class="fc2" id="txn-tipo">
+          <option value="entrada">⬇️ Entrada</option>
+          <option value="saida">⬆️ Saída</option>
+        </select>
+      </div>
+      <div class="fg"><label class="fl">Descrição</label><input class="fc2" id="txn-desc" placeholder="Ex: Consultoria extra, Despesa diversa"></div>
+      <div class="fr">
+        <div class="fg"><label class="fl">Valor (R$)</label><input class="fc2" id="txn-val" type="number" placeholder="0,00"></div>
+        <div class="fg"><label class="fl">Data</label><input class="fc2" id="txn-data" type="date" value="${new Date().toISOString().split('T')[0]}"></div>
+      </div>
+      <div class="fg"><label class="fl">Categoria</label><input class="fc2" id="txn-cat" placeholder="Ex: Serviço, Taxa, Outros"></div>
+      <div class="mf">
+        <button class="btn btn-g" onclick="document.getElementById('txnOverlay').remove()">Cancelar</button>
+        <button class="btn btn-p" onclick="saveTxnManual()">Salvar</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+}
+
+async function saveTxnManual() {
+  const tipo = document.getElementById('txn-tipo').value;
+  const desc = document.getElementById('txn-desc').value.trim();
+  const val = parseFloat(document.getElementById('txn-val').value)||0;
+  const data = document.getElementById('txn-data').value;
+  const cat = document.getElementById('txn-cat').value.trim();
+  if (!desc || !val) { toast('Preencha descrição e valor'); return; }
+  await registrarTransacao(tipo, desc, val, data, cat, null, 'manual', null);
+  document.getElementById('txnOverlay')?.remove();
+  renderFinanceiro();
+  toast('✓ Lançamento registrado');
+}
+
+async function deleteTxn(id) {
+  if (!confirm('Remover este lançamento?')) return;
+  await sb.from('empresa_transacoes').delete().eq('id', id);
+  empresaTransacoes = empresaTransacoes.filter(t=>t.id!==id);
+  renderFinanceiro();
+  toast('Lançamento removido');
 }
 
 // ── CONTAS VARIÁVEIS ──────────────────────

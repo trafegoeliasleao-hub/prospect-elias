@@ -2509,6 +2509,12 @@ function calcMesesAtrasado(cliente) {
   return mesesAtrasado;
 }
 
+// Verifica se o cliente já havia iniciado no mês visualizado
+function clienteAtivoNoMes(cliente, mesStr) {
+  if (!cliente.data_inicio) return true;
+  return cliente.data_inicio.slice(0, 7) <= mesStr;
+}
+
 function scoreColor(s) {
   if (s >= 75) return 'verde';
   if (s >= 45) return 'amarelo';
@@ -2541,7 +2547,7 @@ function renderClientes() {
   const {ant, prox} = getMesClientesNav();
 
   // Calcular totais do mês
-  const ativosContrato = clientes.filter(c=>c.status_contrato==='ativo');
+  const ativosContrato = clientes.filter(c=>c.status_contrato==='ativo' && clienteAtivoNoMes(c, mesClientes));
   let recebido = 0, previsto = 0, atrasado = 0;
   ativosContrato.forEach(c => {
     const st = calcStatusCliente(c);
@@ -2594,11 +2600,16 @@ function renderClientes() {
         </div>
       </div>`:''}
 
-      ${!clientes.length
-        ? `<div class="empty-s" style="height:200px"><div class="es-icon">🤝</div><div class="es-title">Nenhum cliente ativo ainda</div><div class="es-sub">Clique em "+ Novo Cliente" para adicionar</div></div>`
-        : clientesViewMode==='lista'
-          ? renderClientesLista(clientes, hoje)
-          : renderClientesCards(clientes, hoje)}
+      ${(() => {
+        if (!clientes.length) return `<div class="empty-s" style="height:200px"><div class="es-icon">🤝</div><div class="es-title">Nenhum cliente ativo ainda</div><div class="es-sub">Clique em "+ Novo Cliente" para adicionar</div></div>`;
+        const clientesDoMes = clientes.filter(c => clienteAtivoNoMes(c, mesClientes));
+        const ocultados = clientes.length - clientesDoMes.length;
+        const avisoMes = ocultados > 0
+          ? `<div style="background:rgba(0,113,227,.06);border:1px solid rgba(0,113,227,.15);border-radius:10px;padding:10px 14px;font-size:12px;color:var(--accent);margin-bottom:12px">ℹ️ ${ocultados} cliente${ocultados!==1?'s':''} ainda não havia iniciado em ${getMesClientesLabel(mesClientes)}</div>`
+          : '';
+        if (!clientesDoMes.length) return avisoMes + `<div class="empty-s" style="height:200px"><div class="es-icon">📅</div><div class="es-title">Nenhum cliente neste mês</div><div class="es-sub">Os contratos iniciaram após este período</div></div>`;
+        return avisoMes + (clientesViewMode==='lista' ? renderClientesLista(clientesDoMes, hoje) : renderClientesCards(clientesDoMes, hoje));
+      })()}
     </div>`;
 }
 
@@ -3244,21 +3255,22 @@ async function deleteCliente(id) {
 
 // ── FINANCEIRO ────────────────────────────
 let finCustos = [], finMeses = [], finPagamentos = [], finVariaveis = [], finCustosMes = [], finCartao = [];
-let empresaTransacoes = [], empresaCaixinhas = [];
+let empresaTransacoes = [], empresaCaixinhas = [], empresaConfig = null;
 let finTabAtiva = 'visao';
 let mesVizualizado = new Date().toISOString().slice(0,7);
 const mesAtualFin = new Date().toISOString().slice(0,7);
 
 async function loadFinanceiro() {
-  const [rc, rm, rp, rv, rcm, rct, rt, rcx] = await Promise.all([
+  const [rc, rm, rp, rv, rcm, rct, rt, rcx, rcfg] = await Promise.all([
     sb.from('financeiro_custos').select('*').order('categoria'),
     sb.from('financeiro_meses').select('*').order('mes', {ascending:false}).limit(24),
     sb.from('financeiro_pagamentos_custos').select('*').eq('mes', mesVizualizado),
     sb.from('financeiro_variaveis').select('*').eq('mes', mesVizualizado).order('created_at'),
     sb.from('financeiro_custos_mes').select('*').eq('mes', mesVizualizado),
     sb.from('cartao_compras').select('*').order('data_compra', {ascending:false}),
-    sb.from('empresa_transacoes').select('*').order('data', {ascending:false}).limit(200),
-    sb.from('empresa_caixinhas').select('*').order('created_at')
+    sb.from('empresa_transacoes').select('*').order('data', {ascending:false}).order('ordem', {ascending:false}).limit(500),
+    sb.from('empresa_caixinhas').select('*').order('created_at'),
+    sb.from('empresa_config').select('*').limit(1)
   ]);
   finCustos = rc.data || [];
   finMeses = rm.data || [];
@@ -3268,33 +3280,64 @@ async function loadFinanceiro() {
   finCartao = rct.data || [];
   empresaTransacoes = rt.data || [];
   empresaCaixinhas = rcx.data || [];
+  empresaConfig = (rcfg.data || [])[0] || null;
 }
 
 // Registrar transação no extrato automaticamente
 async function registrarTransacao(tipo, descricao, valor, data, categoriaOu, referenciaId, referenciaTipo, caixinhaId) {
+  // Ordem: max(ordem) do dia + 1 para manter sequência
+  const mesmosDia = empresaTransacoes.filter(t=>t.data===(data||new Date().toISOString().split('T')[0]));
+  const maxOrdem = mesmosDia.reduce((m,t)=>Math.max(m,t.ordem||0),0);
   const payload = {
     tipo, descricao, valor: Math.abs(valor),
     data: data || new Date().toISOString().split('T')[0],
     categoria: categoriaOu || null,
     pago: true,
+    data_pagamento: data || new Date().toISOString().split('T')[0],
     referencia_id: referenciaId || null,
     referencia_tipo: referenciaTipo || null,
-    caixinha_id: caixinhaId || null
+    caixinha_id: caixinhaId || null,
+    ordem: maxOrdem + 1
   };
   const { data: t } = await sb.from('empresa_transacoes').insert(payload).select().single();
   if (t) empresaTransacoes.unshift(t);
   return t;
 }
 
-// Saldo da conta baseado em data âncora
-function calcSaldoConta() {
-  const mesData = finMeses.find(m=>m.mes===mesVizualizado);
-  const caixaInicial = mesData?.caixa_inicial != null ? Number(mesData.caixa_inicial) : null;
-  const caixaData = mesData?.caixa_data || null;
-  if (caixaInicial == null || !caixaData) return null;
-  let saldo = caixaInicial;
+// Saldo da conta baseado em âncora GLOBAL única (empresa_config)
+function calcSaldoConta(ateMesStr) {
+  if (empresaConfig?.caixa_ancora_valor == null || empresaConfig?.caixa_ancora_valor === undefined || !empresaConfig?.caixa_ancora_data) return null;
+  const ancoraValor = Number(empresaConfig.caixa_ancora_valor);
+  const ancoraData = empresaConfig.caixa_ancora_data;
+  // Limite superior: último dia do mês visualizado (ou sem limite se for mês atual/futuro)
+  const limiteStr = ateMesStr || null;
+  let saldo = ancoraValor;
   for (const t of empresaTransacoes) {
-    if (!t.data || t.data < caixaData) continue;
+    if (!t.data || t.data < ancoraData) continue; // ignora antes da âncora
+    if (limiteStr && t.data > limiteStr + '-31') continue; // limita ao mês
+    if (t.tipo === 'entrada') saldo += Number(t.valor);
+    if (t.tipo === 'saida' || t.tipo === 'cartao_pagamento') saldo -= Number(t.valor);
+    if (t.tipo === 'caixinha_deposito') saldo -= Number(t.valor);
+    if (t.tipo === 'caixinha_resgate') saldo += Number(t.valor);
+  }
+  return saldo;
+}
+
+// Calcula o saldo projetado para um mês específico
+// Usa saldo final do mês anterior como base quando o mês está após a âncora
+function calcSaldoMes(mesStr) {
+  if (!empresaConfig?.caixa_ancora_data) return null;
+  const ancoraData = empresaConfig.caixa_ancora_data;
+  const ancoraValor = Number(empresaConfig.caixa_ancora_valor || 0);
+  const ancoraMes = ancoraData.slice(0,7);
+  // Se o mês pedido é anterior à âncora, sem dado
+  if (mesStr < ancoraMes) return null;
+  // Calcula acumulado: âncora + todos os movimentos até o final do mês pedido
+  const fimMes = mesStr + '-31';
+  let saldo = ancoraValor;
+  for (const t of empresaTransacoes) {
+    if (!t.data || t.data < ancoraData) continue;
+    if (t.data > fimMes) continue;
     if (t.tipo === 'entrada') saldo += Number(t.valor);
     if (t.tipo === 'saida' || t.tipo === 'cartao_pagamento') saldo -= Number(t.valor);
     if (t.tipo === 'caixinha_deposito') saldo -= Number(t.valor);
@@ -3489,7 +3532,7 @@ function renderFinVisaoGeral() {
   const totalCustos = custosDoMes.reduce((s,c)=>s+Number(c.valor),0);
   const totalVariaveis = finVariaveis.reduce((s,v)=>s+Number(v.valor),0);
   const totalCartao = parcelasDoMes.reduce((s,p)=>s+Number(p.valor_parcela||0),0);
-  const ativosContrato = clientes.filter(c=>c.status_contrato==='ativo');
+  const ativosContrato = clientes.filter(c=>c.status_contrato==='ativo' && clienteAtivoNoMes(c, mesVizualizado));
   let receitaRecebida=0, receitaPrevista=0, receitaAtrasada=0;
   const hoje = new Date(); hoje.setHours(0,0,0,0);
   ativosContrato.forEach(c => {
@@ -3507,20 +3550,29 @@ function renderFinVisaoGeral() {
   const variaveisPagas = finVariaveis.filter(v=>v.pago).reduce((s,v)=>s+Number(v.valor),0);
   const totalPago = custosPagos + variaveisPagas;
   const lucro = receitaRecebida - totalCustos - totalVariaveis - totalCartao;
-  const saldoConta = calcSaldoConta();
+  const saldoConta = calcSaldoMes(mesVizualizado);
   const totalCaixinhas = empresaCaixinhas.reduce((s,cx)=>s+calcSaldoCaixinha(cx.id),0);
-  const mesData = finMeses.find(m=>m.mes===mesVizualizado);
-  const caixaInicial = mesData?.caixa_inicial != null ? Number(mesData.caixa_inicial) : null;
-  const caixaData = mesData?.caixa_data || null;
+  const isMesAtualVis = mesVizualizado === mesAtualFin;
+  const temAncora = empresaConfig?.caixa_ancora_data != null;
+  const [anoA, mesA] = mesVizualizado.split('-').map(Number);
+  const mesAntStr = new Date(anoA, mesA-2, 1).toISOString().slice(0,7);
+  const saldoMesAnt = calcSaldoMes(mesAntStr);
+  const saldoIniciaMes = saldoMesAnt; // saldo no início do mês = final do anterior
 
   return `
     <div class="saldo-bar">
-      <div class="saldo-label">💰 Saldo na conta${caixaData?` · âncora ${new Date(caixaData+'T12:00:00').toLocaleDateString('pt-BR')}`:''}</div>
-      <div class="saldo-valor" style="color:${(saldoConta||0)>=0?'var(--accent)':'var(--red)'}">
-        ${saldoConta!=null?fmtMoeda(saldoConta):'<span style="font-size:18px;color:var(--text-3)">Configure o caixa →</span>'}
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
+        <div>
+          <div class="saldo-label">💰 Saldo na conta — ${getMesLabel(mesVizualizado)}</div>
+          ${temAncora?`<div style="font-size:11px;color:var(--text-3);margin-top:2px">📌 Âncora: ${fmtMoeda(empresaConfig.caixa_ancora_valor)} em ${new Date(empresaConfig.caixa_ancora_data+'T12:00:00').toLocaleDateString('pt-BR')}</div>`:''}
+        </div>
+        <button class="btn btn-g btn-sm" onclick="editarAncora()">📌 ${temAncora?'Editar âncora':'Configurar âncora'}</button>
       </div>
+      <div class="saldo-valor" style="color:${(saldoConta||0)>=0?'var(--accent)':'var(--red)'}">
+        ${saldoConta!=null?fmtMoeda(saldoConta):'<span style="font-size:18px;color:var(--text-3);font-weight:400">Configure a âncora →</span>'}
+      </div>
+      ${!isMesAtualVis&&saldoIniciaMes!=null?`<div style="font-size:12px;color:var(--text-3);margin-top:4px">Início do mês: ${fmtMoeda(saldoIniciaMes)} · ${(saldoConta||0)>=(saldoIniciaMes||0)?'▲':'▼'} ${fmtMoeda(Math.abs((saldoConta||0)-(saldoIniciaMes||0)))} no mês</div>`:''}
       ${totalCaixinhas>0?`<div style="font-size:13px;color:var(--green);margin-top:4px">+ ${fmtMoeda(totalCaixinhas)} guardado nas caixinhas</div>`:''}
-      ${caixaInicial!=null?`<div style="font-size:11px;color:var(--text-3);margin-top:6px">Saldo registrado: ${fmtMoeda(caixaInicial)} + entradas − saídas após âncora</div>`:''}
     </div>
     <div class="fin-resumo">
       <div class="fin-card fin-card-verde">
@@ -3568,13 +3620,32 @@ function renderFinVisaoGeral() {
 }
 
 function renderFinExtrato() {
-  const txnsMes = empresaTransacoes.filter(t=>t.data&&t.data.startsWith(mesVizualizado));
+  // Filtrar e ordenar por data desc, depois ordem desc (desempate mesmo dia)
+  const txnsMes = empresaTransacoes
+    .filter(t=>t.data&&t.data.startsWith(mesVizualizado))
+    .sort((a,b)=> a.data<b.data?1:a.data>b.data?-1:(b.ordem||0)-(a.ordem||0));
   const totalEntradas = txnsMes.filter(t=>t.tipo==='entrada').reduce((s,t)=>s+Number(t.valor),0);
   const totalSaidas = txnsMes.filter(t=>['saida','cartao_pagamento'].includes(t.tipo)).reduce((s,t)=>s+Number(t.valor),0);
   const totalCaixinha = txnsMes.filter(t=>t.tipo==='caixinha_deposito').reduce((s,t)=>s+Number(t.valor),0);
+  // Agrupar por data para mostrar botões ↑↓ dentro do mesmo dia
+  const porDia = {};
+  txnsMes.forEach(t => { if(!porDia[t.data]) porDia[t.data]=[]; porDia[t.data].push(t); });
   return `
     <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px">
-      <div style="font-size:18px;font-weight:700">Extrato — ${getMesLabel(mesVizualizado)}</div>
+      <div>
+        <div style="font-size:18px;font-weight:700">Extrato — ${getMesLabel(mesVizualizado)}</div>
+        ${(() => {
+          const saldoFim = calcSaldoMes(mesVizualizado);
+          const [anoE, mesE] = mesVizualizado.split('-').map(Number);
+          const mesAntE = new Date(anoE, mesE-2, 1).toISOString().slice(0,7);
+          const saldoIni = calcSaldoMes(mesAntE);
+          if (saldoIni==null && saldoFim==null) return '';
+          const partes = [];
+          if (saldoIni!=null) partes.push('Início: <strong style="color:'+(saldoIni>=0?'var(--accent)':'var(--red)')+'">'+fmtMoeda(saldoIni)+'</strong>');
+          if (saldoFim!=null) partes.push('Fim: <strong style="color:'+(saldoFim>=0?'var(--green)':'var(--red)')+'">'+fmtMoeda(saldoFim)+'</strong>');
+          return '<div style="font-size:12px;color:var(--text-2);margin-top:2px">'+partes.join(' → ')+'</div>';
+        })()}
+      </div>
       <button class="btn btn-p btn-sm" onclick="openTxnManualModal()">+ Lançamento</button>
     </div>
     <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px">
@@ -3593,7 +3664,7 @@ function renderFinExtrato() {
     </div>
     <div class="card">
       <div style="padding:0 20px">
-        ${txnsMes.length?renderTxnLista(txnsMes):'<div class="h-emp">Nenhuma movimentação em '+getMesLabel(mesVizualizado)+'</div>'}
+        ${txnsMes.length ? renderTxnListaExtrato(txnsMes, porDia) : '<div class="h-emp">Nenhuma movimentação em '+getMesLabel(mesVizualizado)+'</div>'}
       </div>
     </div>`;
 }
@@ -3621,6 +3692,51 @@ function renderTxnLista(txns) {
         ${t.referencia_tipo?`<div style="font-size:10px;color:var(--text-3);text-align:right">${t.referencia_tipo}</div>`:''}
       </div>
       <button onclick="deleteTxn('${t.id}')" style="background:none;border:none;cursor:pointer;color:var(--text-3);font-size:14px;padding:4px;opacity:.5">✕</button>
+    </div>`;
+  }).join('');
+}
+
+// Versão do extrato com reordenação por dia e botão de pagamento
+function renderTxnListaExtrato(txns, porDia) {
+  if (!txns.length) return '';
+  const tipoInfo = {
+    entrada:{bg:'rgba(52,199,89,.15)',icon:'⬇️',cor:'var(--green)',sinal:'+'},
+    saida:{bg:'rgba(255,59,48,.12)',icon:'⬆️',cor:'var(--red)',sinal:'-'},
+    caixinha_deposito:{bg:'rgba(0,113,227,.1)',icon:'🐷',cor:'var(--accent)',sinal:'-'},
+    caixinha_resgate:{bg:'rgba(52,199,89,.12)',icon:'🐷',cor:'var(--green)',sinal:'+'},
+    cartao_pagamento:{bg:'rgba(255,149,0,.1)',icon:'💳',cor:'var(--orange)',sinal:'-'},
+  };
+  // Renderizar agrupado por dia (cada dia é uma seção)
+  const dias = Object.keys(porDia).sort((a,b)=>b.localeCompare(a));
+  return dias.map(dia => {
+    const txnsDia = porDia[dia].sort((a,b)=>(b.ordem||0)-(a.ordem||0));
+    const diaLabel = new Date(dia+'T12:00:00').toLocaleDateString('pt-BR',{weekday:'short',day:'2-digit',month:'short'});
+    return `<div style="margin-top:4px">
+      <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text-3);padding:10px 0 4px">${diaLabel}</div>
+      ${txnsDia.map((t,idx) => {
+        const info = tipoInfo[t.tipo]||{bg:'rgba(0,0,0,.06)',icon:'💰',cor:'var(--text)',sinal:''};
+        const cx = t.caixinha_id ? empresaCaixinhas.find(c=>c.id===t.caixinha_id) : null;
+        const isManual = t.referencia_tipo==='manual' || !t.referencia_tipo;
+        const temPagamento = t.data_pagamento != null;
+        const podeMoverCima = idx < txnsDia.length-1; // lista desc: "subir" = trocar com próximo (que tem ordem menor)
+        const podeMoverBaixo = idx > 0;
+        return `<div class="txn-row" style="position:relative">
+          <div class="txn-icon" style="background:${info.bg}">${info.icon}</div>
+          <div class="txn-desc">
+            <div class="txn-nome">${esc(t.descricao)}</div>
+            <div class="txn-cat">${t.categoria?esc(t.categoria):''}${cx?' · '+esc(cx.nome):''}${temPagamento?' · 💰 pago '+new Date(t.data_pagamento+'T12:00:00').toLocaleDateString('pt-BR'):''}</div>
+          </div>
+          <div style="display:flex;flex-direction:column;align-items:flex-end;gap:2px">
+            <div class="txn-val" style="color:${info.cor}">${info.sinal}${fmtMoeda(t.valor)}</div>
+            ${isManual&&!temPagamento&&(t.tipo==='entrada'||t.tipo==='saida')?`<button onclick="registrarPagamentoTxn('${t.id}')" style="font-size:10px;color:var(--accent);background:none;border:none;cursor:pointer;padding:0;white-space:nowrap">💰 Registrar pgto</button>`:''}
+          </div>
+          <div style="display:flex;flex-direction:column;gap:1px;margin-left:2px">
+            ${podeMoverCima?`<button onclick="moverTxnOrdem('${t.id}','cima','${dia}')" title="Mover para cima" style="background:none;border:none;cursor:pointer;font-size:11px;color:var(--text-3);padding:1px 4px;line-height:1">↑</button>`:'<span style="padding:1px 4px;font-size:11px"></span>'}
+            ${podeMoverBaixo?`<button onclick="moverTxnOrdem('${t.id}','baixo','${dia}')" title="Mover para baixo" style="background:none;border:none;cursor:pointer;font-size:11px;color:var(--text-3);padding:1px 4px;line-height:1">↓</button>`:'<span style="padding:1px 4px;font-size:11px"></span>'}
+          </div>
+          <button onclick="deleteTxn('${t.id}')" style="background:none;border:none;cursor:pointer;color:var(--text-3);font-size:14px;padding:4px;opacity:.5">✕</button>
+        </div>`;
+      }).join('')}
     </div>`;
   }).join('');
 }
@@ -3805,6 +3921,10 @@ function renderFinNavMeses() {
   const isMesAtual = mesVizualizado === mesAtualFin;
   const mesData = finMeses.find(m=>m.mes===mesVizualizado);
   const previaJaOferecida = mesData?.previa_oferecida === true;
+  const temAncora = empresaConfig?.caixa_ancora_data != null;
+  const ancoraInfo = temAncora
+    ? `âncora ${new Date(empresaConfig.caixa_ancora_data+'T12:00:00').toLocaleDateString('pt-BR')} · ${fmtMoeda(empresaConfig.caixa_ancora_valor)}`
+    : 'sem âncora configurada';
   return `
     <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 20px;border-bottom:1px solid var(--border);flex-wrap:wrap;gap:8px">
       <div style="display:flex;align-items:center;gap:4px;background:var(--glass);border:1px solid var(--glass-border);border-radius:980px;padding:3px 6px">
@@ -3812,42 +3932,56 @@ function renderFinNavMeses() {
         <div style="padding:4px 14px;background:var(--accent);color:#fff;border-radius:980px;font-size:12px;font-weight:700">${getMesLabel(mesVizualizado)}${isMesAtual?' · Atual':''}</div>
         <button onclick="navegarMes(1)" style="background:none;border:none;cursor:pointer;padding:4px 10px;border-radius:20px;font-size:13px;color:var(--text-2)">${getMesLabel(prox)} →</button>
       </div>
-      <div style="display:flex;gap:6px">
+      <div style="display:flex;gap:6px;align-items:center">
+        ${temAncora?`<span style="font-size:11px;color:var(--text-3)">📌 ${ancoraInfo}</span>`:'<span style="font-size:11px;color:var(--orange)">⚠️ Âncora não configurada</span>'}
         ${!previaJaOferecida?`<button class="btn btn-g btn-sm" onclick="ofertarPreviaManual()">↓ Trazer do mês anterior</button>`:''}
-        <button class="btn btn-g btn-sm" onclick="editarCaixa()">✏️ Editar caixa</button>
+        <button class="btn btn-g btn-sm" onclick="editarAncora()">📌 ${temAncora?'Editar âncora':'Configurar âncora'}</button>
       </div>
     </div>`;
 }
 
 
-async function editarCaixa() {
-  const mesData = finMeses.find(m=>m.mes===mesVizualizado);
-  showMiniModal('💰 Editar Caixa', '', []);
+async function editarCaixa() { editarAncora(); } // compatibilidade
+
+async function editarAncora() {
+  const valorAtual = empresaConfig?.caixa_ancora_valor ?? '';
+  const dataAtual = empresaConfig?.caixa_ancora_data ?? new Date().toISOString().split('T')[0];
+  showMiniModal('📌 Âncora de Caixa', '', []);
   document.getElementById('fuMiniSub').innerHTML = `
-    <div style="display:flex;flex-direction:column;gap:10px;margin-top:4px">
+    <div style="background:rgba(0,113,227,.06);border:1px solid rgba(0,113,227,.15);border-radius:10px;padding:10px 12px;font-size:12px;color:var(--accent);margin-bottom:12px">
+      Esta âncora é única e global. Você registra uma vez o saldo real da sua conta em uma data específica.
+      O sistema calcula tudo a partir daí — entradas e saídas após essa data ajustam o saldo automaticamente.
+    </div>
+    <div style="display:flex;flex-direction:column;gap:10px">
       <div>
-        <label style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--text-3);display:block;margin-bottom:4px">Saldo atual da conta (R$)</label>
-        <input type="number" id="caixaValInput" value="${mesData?.caixa_inicial||''}" placeholder="0,00"
+        <label style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--text-3);display:block;margin-bottom:4px">Saldo real da conta na data âncora (R$)</label>
+        <input type="number" id="ancoraValInput" value="${valorAtual}" placeholder="0,00"
           style="width:100%;background:rgba(0,0,0,.04);border:1.5px solid var(--border-s);border-radius:8px;padding:9px 12px;font-family:inherit;font-size:14px;font-weight:600;outline:none">
       </div>
       <div>
-        <label style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--text-3);display:block;margin-bottom:4px">Data de referência</label>
-        <input type="date" id="caixaDataInput" value="${mesData?.caixa_data||new Date().toISOString().split('T')[0]}"
+        <label style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--text-3);display:block;margin-bottom:4px">Data âncora</label>
+        <input type="date" id="ancoraDataInput" value="${dataAtual}"
           style="width:100%;background:rgba(0,0,0,.04);border:1.5px solid var(--border-s);border-radius:8px;padding:9px 12px;font-family:inherit;font-size:13px;outline:none">
       </div>
+      <div style="font-size:11px;color:var(--text-3)">⚠️ Alterar a âncora vai recalcular todos os saldos. Movimentos antes dessa data não alteram o saldo.</div>
     </div>`;
   document.getElementById('fuMiniBtns').innerHTML = '';
   [
-    { label: '✓ Salvar', cls: 'btn-p', fn: async () => {
-      const val = parseFloat(document.getElementById('caixaValInput')?.value)||0;
-      const data = document.getElementById('caixaDataInput')?.value || new Date().toISOString().split('T')[0];
-      await sb.from('financeiro_meses').upsert({
-        mes: mesVizualizado, caixa_inicial: val, caixa_data: data
-      }, {onConflict:'mes'});
-      await loadFinanceiro();
+    { label: '📌 Salvar âncora', cls: 'btn-p', fn: async () => {
+      const val = parseFloat(document.getElementById('ancoraValInput')?.value);
+      const data = document.getElementById('ancoraDataInput')?.value;
+      if (isNaN(val) || !data) { toast('Preencha valor e data'); return; }
+      const payload = { caixa_ancora_valor: val, caixa_ancora_data: data, updated_at: new Date().toISOString() };
+      if (empresaConfig?.id) {
+        await sb.from('empresa_config').update(payload).eq('id', empresaConfig.id);
+        Object.assign(empresaConfig, payload);
+      } else {
+        const { data: novo } = await sb.from('empresa_config').insert(payload).select().single();
+        empresaConfig = novo;
+      }
       renderFinanceiro();
       closeMiniModal();
-      toast('✓ Caixa atualizado');
+      toast('📌 Âncora de caixa salva');
     }},
     { label: 'Cancelar', cls: 'btn-g', fn: closeMiniModal }
   ].forEach(b => {
@@ -4039,9 +4173,13 @@ function openTxnManualModal() {
       <div class="fg"><label class="fl">Descrição</label><input class="fc2" id="txn-desc" placeholder="Ex: Consultoria extra, Despesa diversa"></div>
       <div class="fr">
         <div class="fg"><label class="fl">Valor (R$)</label><input class="fc2" id="txn-val" type="number" placeholder="0,00"></div>
-        <div class="fg"><label class="fl">Data</label><input class="fc2" id="txn-data" type="date" value="${new Date().toISOString().split('T')[0]}"></div>
+        <div class="fg"><label class="fl">Data do lançamento</label><input class="fc2" id="txn-data" type="date" value="${new Date().toISOString().split('T')[0]}"></div>
       </div>
       <div class="fg"><label class="fl">Categoria</label><input class="fc2" id="txn-cat" placeholder="Ex: Serviço, Taxa, Outros"></div>
+      <div class="fg">
+        <label class="fl">Data de pagamento <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--text-3)">(opcional — para cálculo do saldo)</span></label>
+        <input class="fc2" id="txn-datapag" type="date" placeholder="Deixe em branco se ainda não pago">
+      </div>
       <div class="mf">
         <button class="btn btn-g" onclick="document.getElementById('txnOverlay').remove()">Cancelar</button>
         <button class="btn btn-p" onclick="saveTxnManual()">Salvar</button>
@@ -4056,8 +4194,19 @@ async function saveTxnManual() {
   const val = parseFloat(document.getElementById('txn-val').value)||0;
   const data = document.getElementById('txn-data').value;
   const cat = document.getElementById('txn-cat').value.trim();
+  const dataPag = document.getElementById('txn-datapag')?.value || null;
   if (!desc || !val) { toast('Preencha descrição e valor'); return; }
-  await registrarTransacao(tipo, desc, val, data, cat, null, 'manual', null);
+  // Usa data de pagamento como data âncora se preenchida
+  const dataEfetiva = dataPag || data;
+  const { data: t } = await sb.from('empresa_transacoes').insert({
+    tipo, descricao: desc, valor: Math.abs(val),
+    data: dataEfetiva,
+    categoria: cat||null,
+    pago: !!dataPag,
+    data_pagamento: dataPag||null,
+    referencia_tipo: 'manual'
+  }).select().single();
+  if (t) empresaTransacoes.unshift(t);
   document.getElementById('txnOverlay')?.remove();
   renderFinanceiro();
   toast('✓ Lançamento registrado');
@@ -4069,6 +4218,69 @@ async function deleteTxn(id) {
   empresaTransacoes = empresaTransacoes.filter(t=>t.id!==id);
   renderFinanceiro();
   toast('Lançamento removido');
+}
+
+// Move um lançamento para cima ou baixo dentro do mesmo dia (via campo ordem)
+async function moverTxnOrdem(id, direcao, dia) {
+  // Pega todos do mesmo dia ordenados desc por ordem
+  const doDia = empresaTransacoes
+    .filter(t=>t.data===dia)
+    .sort((a,b)=>(b.ordem||0)-(a.ordem||0));
+  const idx = doDia.findIndex(t=>t.id===id);
+  if (idx<0) return;
+  // "cima" na tela = posição de índice maior na lista desc = trocar com idx+1
+  // "baixo" na tela = trocar com idx-1
+  const outroIdx = direcao==='cima' ? idx+1 : idx-1;
+  if (outroIdx<0 || outroIdx>=doDia.length) return;
+  const a = doDia[idx];
+  const b = doDia[outroIdx];
+  const ordemA = a.ordem||0;
+  const ordemB = b.ordem||0;
+  // Troca as ordens
+  const [novaA, novaB] = [ordemB, ordemA];
+  await Promise.all([
+    sb.from('empresa_transacoes').update({ordem: novaA}).eq('id', a.id),
+    sb.from('empresa_transacoes').update({ordem: novaB}).eq('id', b.id)
+  ]);
+  // Atualiza local
+  empresaTransacoes = empresaTransacoes.map(t => {
+    if (t.id===a.id) return {...t, ordem:novaA};
+    if (t.id===b.id) return {...t, ordem:novaB};
+    return t;
+  });
+  renderFinanceiro();
+}
+
+// Registra data de pagamento em lançamento manual
+async function registrarPagamentoTxn(id) {
+  const txn = empresaTransacoes.find(t=>t.id===id);
+  if (!txn) return;
+  showMiniModal('💰 Registrar data de pagamento', `${esc(txn.descricao)} — ${fmtMoeda(txn.valor)}`, []);
+  document.getElementById('fuMiniSub').innerHTML = `
+    <div style="margin-top:8px;display:flex;flex-direction:column;gap:10px">
+      <div>
+        <label style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--text-3);display:block;margin-bottom:4px">Data do pagamento</label>
+        <input type="date" id="txnPagDataInput" value="${new Date().toISOString().split('T')[0]}"
+          style="width:100%;background:rgba(0,0,0,.04);border:1.5px solid var(--border-s);border-radius:8px;padding:9px 12px;font-family:inherit;font-size:13px;outline:none">
+      </div>
+      <div style="font-size:11px;color:var(--text-3)">A data do lançamento no extrato permanece ${txn.data?new Date(txn.data+'T12:00:00').toLocaleDateString('pt-BR'):'—'}. A data do pagamento é usada para o cálculo do saldo a partir da âncora.</div>
+    </div>`;
+  document.getElementById('fuMiniBtns').innerHTML = '';
+  [
+    { label: '✓ Confirmar', cls: 'btn-p', fn: async () => {
+      const dataPag = document.getElementById('txnPagDataInput')?.value || new Date().toISOString().split('T')[0];
+      await sb.from('empresa_transacoes').update({data_pagamento: dataPag, data: dataPag}).eq('id', id);
+      empresaTransacoes = empresaTransacoes.map(t => t.id===id ? {...t, data_pagamento:dataPag, data:dataPag} : t);
+      closeMiniModal();
+      renderFinanceiro();
+      toast('✓ Pagamento registrado');
+    }},
+    { label: 'Cancelar', cls: 'btn-g', fn: closeMiniModal }
+  ].forEach(b => {
+    const el = document.createElement('button');
+    el.className = 'btn '+b.cls; el.textContent = b.label; el.onclick = b.fn;
+    document.getElementById('fuMiniBtns').appendChild(el);
+  });
 }
 
 // ── CONTAS VARIÁVEIS ──────────────────────

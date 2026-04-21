@@ -3866,7 +3866,7 @@ async function marcarCustoPago(custoMesId, valor) {
     const d = new Date(ano, mes-1, custo.dia_vencimento);
     vencDefault = d.toISOString().split('T')[0];
   }
-  showMiniModal('✓ Registrar pagamento', '', []);
+  showMiniModal('✓ Registrar pagamento', custo?`${custo.nome} — ${fmtMoeda(custo.valor)}`:'', []);
   document.getElementById('fuMiniSub').innerHTML = `
     <div style="display:flex;flex-direction:column;gap:10px;margin-top:4px">
       <div>
@@ -3885,13 +3885,24 @@ async function marcarCustoPago(custoMesId, valor) {
     { label: '✓ Confirmar', cls: 'btn-p', fn: async () => {
       const dataVenc = document.getElementById('dataVencInput')?.value||null;
       const dataPag = document.getElementById('dataPagInput')?.value||new Date().toISOString().split('T')[0];
+      const valNum = parseFloat(valor)||0;
+      // 1. Salvar pagamento
       await sb.from('financeiro_pagamentos_custos').upsert({
         custo_id: custoMesId, mes: mesVizualizado,
-        valor_pago: parseFloat(valor)||0,
+        valor_pago: valNum,
         data_vencimento: dataVenc||null,
         data_pagamento: dataPag
       }, {onConflict:'custo_id,mes'});
+      // 2. Registrar saída no extrato
+      await registrarTransacao(
+        'saida',
+        `Custo fixo — ${custo?.nome||'custo'}`,
+        valNum, dataPag,
+        custo?.categoria||'custo_fixo',
+        custoMesId, 'custo_fixo', null
+      );
       closeMiniModal();
+      // 3. Recarregar finPagamentos corretamente
       const { data: rp } = await sb.from('financeiro_pagamentos_custos').select('*').eq('mes', mesVizualizado);
       finPagamentos = rp || [];
       renderFinanceiro();
@@ -4139,7 +4150,8 @@ async function togglePagoVariavel(id, estaPago) {
     renderFinanceiro();
     toast('Pagamento removido');
   } else {
-    showMiniModal('✓ Marcar como pago', '', []);
+    const variavel = finVariaveis.find(v=>v.id===id);
+    showMiniModal('✓ Marcar como pago', variavel?`${variavel.nome} — ${fmtMoeda(variavel.valor)}`:'', []);
     document.getElementById('fuMiniSub').innerHTML = `
       <div style="margin-top:8px">
         <label style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--text-3);display:block;margin-bottom:4px">Data de pagamento</label>
@@ -4152,6 +4164,16 @@ async function togglePagoVariavel(id, estaPago) {
         const data = document.getElementById('dataPagVarInput')?.value || new Date().toISOString().split('T')[0];
         await sb.from('financeiro_variaveis').update({pago:true, data_pagamento:data}).eq('id', id);
         finVariaveis = finVariaveis.map(v => v.id===id ? {...v, pago:true, data_pagamento:data} : v);
+        // Registrar saída no extrato
+        if (variavel) {
+          await registrarTransacao(
+            'saida',
+            `Conta variável — ${variavel.nome}`,
+            variavel.valor, data,
+            variavel.categoria||'variavel',
+            id, 'variavel', null
+          );
+        }
         closeMiniModal();
         renderFinanceiro();
         toast('✓ Conta marcada como paga');

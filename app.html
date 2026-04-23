@@ -2534,14 +2534,24 @@ function getMesClientesNav() {
   };
 }
 
+function clienteAtivoNoMes(c) {
+  // Cliente só aparece em meses >= data_inicio
+  if (!c.data_inicio) return true; // sem data, sempre aparece
+  const [anoMes, mesMes] = mesClientes.split('-').map(Number);
+  const inicioMes = mesClientes + '-01';
+  const fimMes = new Date(anoMes, mesMes, 0).toISOString().split('T')[0]; // último dia do mês
+  // Aparece se data_inicio <= último dia do mês visualizado
+  return c.data_inicio <= fimMes;
+}
+
 function renderClientes() {
   const wrap = document.getElementById('clientesWrap');
   const hoje = new Date(); hoje.setHours(0,0,0,0);
   const isMesAtual = mesClientes === new Date().toISOString().slice(0,7);
   const {ant, prox} = getMesClientesNav();
 
-  // Calcular totais do mês
-  const ativosContrato = clientes.filter(c=>c.status_contrato==='ativo');
+  // Filtrar clientes ativos E que já iniciaram neste mês
+  const ativosContrato = clientes.filter(c=>c.status_contrato==='ativo' && clienteAtivoNoMes(c));
   let recebido = 0, previsto = 0, atrasado = 0;
   ativosContrato.forEach(c => {
     const st = calcStatusCliente(c);
@@ -2557,10 +2567,9 @@ function renderClientes() {
       <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px">
         <div>
           <div style="font-size:22px;font-weight:700;letter-spacing:-.4px">Clientes Ativos</div>
-          <div style="font-size:13px;color:var(--text-2);margin-top:2px">${ativosContrato.length} contratos ativos</div>
+          <div style="font-size:13px;color:var(--text-2);margin-top:2px">${ativosContrato.length} contratos em ${getMesClientesLabel(mesClientes)}</div>
         </div>
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-          <!-- Navegação de meses -->
           <div style="display:flex;align-items:center;gap:4px;background:var(--glass);border:1px solid var(--glass-border);border-radius:980px;padding:4px 8px;backdrop-filter:blur(12px)">
             <button onclick="navegarMesClientes(-1)" style="background:none;border:none;cursor:pointer;padding:4px 8px;border-radius:20px;font-size:13px;color:var(--text-2)">← ${getMesClientesLabel(ant)}</button>
             <div style="padding:4px 14px;background:var(--accent);color:#fff;border-radius:980px;font-size:12px;font-weight:700">${getMesClientesLabel(mesClientes)}${isMesAtual?' · Atual':''}</div>
@@ -2575,7 +2584,6 @@ function renderClientes() {
       </div>
 
       ${currentUserRole==='admin'?`
-      <!-- RESUMO DO MÊS -->
       <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px">
         <div style="background:rgba(52,199,89,.08);border:1px solid rgba(52,199,89,.2);border-radius:var(--r-l);padding:14px 16px">
           <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#1a7a3c;margin-bottom:4px">✅ Recebido</div>
@@ -2594,11 +2602,11 @@ function renderClientes() {
         </div>
       </div>`:''}
 
-      ${!clientes.length
-        ? `<div class="empty-s" style="height:200px"><div class="es-icon">🤝</div><div class="es-title">Nenhum cliente ativo ainda</div><div class="es-sub">Clique em "+ Novo Cliente" para adicionar</div></div>`
+      ${!ativosContrato.length
+        ? `<div class="empty-s" style="height:200px"><div class="es-icon">🤝</div><div class="es-title">Nenhum cliente ativo em ${getMesClientesLabel(mesClientes)}</div><div class="es-sub">Clique em "+ Novo Cliente" para adicionar</div></div>`
         : clientesViewMode==='lista'
-          ? renderClientesLista(clientes, hoje)
-          : renderClientesCards(clientes, hoje)}
+          ? renderClientesLista(ativosContrato, hoje)
+          : renderClientesCards(ativosContrato, hoje)}
     </div>`;
 }
 
@@ -3257,7 +3265,7 @@ async function loadFinanceiro() {
     sb.from('financeiro_variaveis').select('*').eq('mes', mesVizualizado).order('created_at'),
     sb.from('financeiro_custos_mes').select('*').eq('mes', mesVizualizado),
     sb.from('cartao_compras').select('*').order('data_compra', {ascending:false}),
-    sb.from('empresa_transacoes').select('*').order('data', {ascending:false}).limit(200),
+    sb.from('empresa_transacoes').select('*').order('data', {ascending:false}).order('ordem', {ascending:false}).limit(500),
     sb.from('empresa_caixinhas').select('*').order('created_at')
   ]);
   finCustos = rc.data || [];
@@ -3268,6 +3276,7 @@ async function loadFinanceiro() {
   finCartao = rct.data || [];
   empresaTransacoes = rt.data || [];
   empresaCaixinhas = rcx.data || [];
+  await loadEmpresaConfig();
 }
 
 // Registrar transação no extrato automaticamente
@@ -3286,21 +3295,85 @@ async function registrarTransacao(tipo, descricao, valor, data, categoriaOu, ref
   return t;
 }
 
-// Saldo da conta baseado em data âncora
+// ── ÂNCORA GLOBAL ─────────────────────────
+let empresaConfig = null; // {caixa_ancora_valor, caixa_ancora_data}
+
+async function loadEmpresaConfig() {
+  const { data } = await sb.from('empresa_config').select('*').limit(1).maybeSingle();
+  empresaConfig = data || null;
+}
+
+async function salvarAncora(valor, data) {
+  if (empresaConfig?.id) {
+    await sb.from('empresa_config').update({
+      caixa_ancora_valor: valor, caixa_ancora_data: data,
+      updated_at: new Date().toISOString()
+    }).eq('id', empresaConfig.id);
+    empresaConfig = {...empresaConfig, caixa_ancora_valor: valor, caixa_ancora_data: data};
+  } else {
+    const { data: d } = await sb.from('empresa_config').insert({
+      caixa_ancora_valor: valor, caixa_ancora_data: data
+    }).select().single();
+    empresaConfig = d;
+  }
+}
+
+// Calcula saldo real baseado na âncora global única
+// Conta TODAS as transações após a âncora, independente do mês visualizado
 function calcSaldoConta() {
-  const mesData = finMeses.find(m=>m.mes===mesVizualizado);
-  const caixaInicial = mesData?.caixa_inicial != null ? Number(mesData.caixa_inicial) : null;
-  const caixaData = mesData?.caixa_data || null;
-  if (caixaInicial == null || !caixaData) return null;
-  let saldo = caixaInicial;
+  if (!empresaConfig?.caixa_ancora_valor || !empresaConfig?.caixa_ancora_data) return null;
+  const ancora = Number(empresaConfig.caixa_ancora_valor);
+  const dataAncora = empresaConfig.caixa_ancora_data;
+  let saldo = ancora;
   for (const t of empresaTransacoes) {
-    if (!t.data || t.data < caixaData) continue;
+    if (!t.data || t.data < dataAncora) continue;
     if (t.tipo === 'entrada') saldo += Number(t.valor);
     if (t.tipo === 'saida' || t.tipo === 'cartao_pagamento') saldo -= Number(t.valor);
     if (t.tipo === 'caixinha_deposito') saldo -= Number(t.valor);
     if (t.tipo === 'caixinha_resgate') saldo += Number(t.valor);
   }
   return saldo;
+}
+
+// Calcula saldo até o final de um mês específico (para propagação)
+function calcSaldoAteFinsMes(mesStr) {
+  if (!empresaConfig?.caixa_ancora_valor || !empresaConfig?.caixa_ancora_data) return null;
+  const ancora = Number(empresaConfig.caixa_ancora_valor);
+  const dataAncora = empresaConfig.caixa_ancora_data;
+  const [ano, mes] = mesStr.split('-').map(Number);
+  const fimMes = new Date(ano, mes, 0).toISOString().split('T')[0]; // último dia do mês
+  let saldo = ancora;
+  for (const t of empresaTransacoes) {
+    if (!t.data || t.data < dataAncora || t.data > fimMes) continue;
+    if (t.tipo === 'entrada') saldo += Number(t.valor);
+    if (t.tipo === 'saida' || t.tipo === 'cartao_pagamento') saldo -= Number(t.valor);
+    if (t.tipo === 'caixinha_deposito') saldo -= Number(t.valor);
+    if (t.tipo === 'caixinha_resgate') saldo += Number(t.valor);
+  }
+  return saldo;
+}
+
+// Calcula saldo projetado para meses futuros (inclui receitas previstas)
+function calcSaldoProjetadoMes(mesStr) {
+  const saldoBase = calcSaldoConta(); // saldo atual real
+  if (saldoBase === null) return null;
+  const hoje = new Date().toISOString().split('T')[0];
+  const [ano, mes] = mesStr.split('-').map(Number);
+  const inicioMes = mesStr + '-01';
+  const fimMes = new Date(ano, mes, 0).toISOString().split('T')[0];
+  // Só projetar meses futuros
+  if (fimMes <= hoje) return calcSaldoAteFinsMes(mesStr);
+  // Adicionar receitas previstas e subtrair custos previstos do mês
+  const ativosContrato = clientes.filter(c=>c.status_contrato==='ativo');
+  let receitaPrev = 0;
+  ativosContrato.forEach(c => {
+    if (!clienteAtivoNoMes(c)) return;
+    const pag = pagamentosClientes.find(p=>p.cliente_id===c.id);
+    if (!pag || pag.status!=='pago') receitaPrev += Number(c.valor_contrato||0);
+  });
+  const custosPrevistos = getCustosDoMes().reduce((s,c)=>s+(c.pago?0:Number(c.valor)),0);
+  const varPrevistos = finVariaveis.filter(v=>!v.pago).reduce((s,v)=>s+Number(v.valor),0);
+  return saldoBase + receitaPrev - custosPrevistos - varPrevistos;
 }
 
 // Saldo de uma caixinha
@@ -3507,20 +3580,31 @@ function renderFinVisaoGeral() {
   const variaveisPagas = finVariaveis.filter(v=>v.pago).reduce((s,v)=>s+Number(v.valor),0);
   const totalPago = custosPagos + variaveisPagas;
   const lucro = receitaRecebida - totalCustos - totalVariaveis - totalCartao;
-  const saldoConta = calcSaldoConta();
+  const saldoConta = calcSaldoConta(); // saldo real atual (sempre com âncora global)
   const totalCaixinhas = empresaCaixinhas.reduce((s,cx)=>s+calcSaldoCaixinha(cx.id),0);
-  const mesData = finMeses.find(m=>m.mes===mesVizualizado);
-  const caixaInicial = mesData?.caixa_inicial != null ? Number(mesData.caixa_inicial) : null;
-  const caixaData = mesData?.caixa_data || null;
+  const isMesAtualV = mesVizualizado === mesAtualFin;
+  const saldoMes = isMesAtualV ? saldoConta : calcSaldoAteFinsMes(mesVizualizado);
+  const ancora = empresaConfig?.caixa_ancora_valor;
+  const dataAncora = empresaConfig?.caixa_ancora_data;
 
   return `
     <div class="saldo-bar">
-      <div class="saldo-label">💰 Saldo na conta${caixaData?` · âncora ${new Date(caixaData+'T12:00:00').toLocaleDateString('pt-BR')}`:''}</div>
-      <div class="saldo-valor" style="color:${(saldoConta||0)>=0?'var(--accent)':'var(--red)'}">
-        ${saldoConta!=null?fmtMoeda(saldoConta):'<span style="font-size:18px;color:var(--text-3)">Configure o caixa →</span>'}
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:8px">
+        <div>
+          <div class="saldo-label">💰 Saldo na conta${dataAncora?` · âncora ${new Date(dataAncora+'T12:00:00').toLocaleDateString('pt-BR')}`:''}</div>
+          <div class="saldo-valor" style="color:${(saldoConta||0)>=0?'var(--accent)':'var(--red)'}">
+            ${saldoConta!=null?fmtMoeda(saldoConta):'<span style="font-size:18px;color:var(--text-3)">Configure a âncora →</span>'}
+          </div>
+          ${totalCaixinhas>0?`<div style="font-size:13px;color:var(--green);margin-top:4px">+ ${fmtMoeda(totalCaixinhas)} nas caixinhas</div>`:''}
+        </div>
+        ${ancora!=null&&!isMesAtualV?`
+        <div style="text-align:right">
+          <div class="saldo-label">Saldo em ${getMesLabel(mesVizualizado)}</div>
+          <div style="font-size:22px;font-weight:700;color:${(saldoMes||0)>=0?'var(--accent)':'var(--red)'}">${saldoMes!=null?fmtMoeda(saldoMes):'—'}</div>
+          <div style="font-size:11px;color:var(--text-3)">baseado nas transações do mês</div>
+        </div>`:''}
       </div>
-      ${totalCaixinhas>0?`<div style="font-size:13px;color:var(--green);margin-top:4px">+ ${fmtMoeda(totalCaixinhas)} guardado nas caixinhas</div>`:''}
-      ${caixaInicial!=null?`<div style="font-size:11px;color:var(--text-3);margin-top:6px">Saldo registrado: ${fmtMoeda(caixaInicial)} + entradas − saídas após âncora</div>`:''}
+      ${ancora!=null?`<div style="font-size:11px;color:var(--text-3);margin-top:8px">Âncora: ${fmtMoeda(ancora)} em ${dataAncora?new Date(dataAncora+'T12:00:00').toLocaleDateString('pt-BR'):'—'} · saídas/entradas após esta data alteram o saldo</div>`:''}
     </div>
     <div class="fin-resumo">
       <div class="fin-card fin-card-verde">
@@ -3593,12 +3677,12 @@ function renderFinExtrato() {
     </div>
     <div class="card">
       <div style="padding:0 20px">
-        ${txnsMes.length?renderTxnLista(txnsMes):'<div class="h-emp">Nenhuma movimentação em '+getMesLabel(mesVizualizado)+'</div>'}
+        ${txnsMes.length?renderTxnLista(txnsMes, true):'<div class="h-emp">Nenhuma movimentação em '+getMesLabel(mesVizualizado)+'</div>'}
       </div>
     </div>`;
 }
 
-function renderTxnLista(txns) {
+function renderTxnLista(txns, comControles = false) {
   if (!txns.length) return '';
   const tipoInfo = {
     entrada:{bg:'rgba(52,199,89,.15)',icon:'⬇️',cor:'var(--green)',sinal:'+'},
@@ -3607,22 +3691,88 @@ function renderTxnLista(txns) {
     caixinha_resgate:{bg:'rgba(52,199,89,.12)',icon:'🐷',cor:'var(--green)',sinal:'+'},
     cartao_pagamento:{bg:'rgba(255,149,0,.1)',icon:'💳',cor:'var(--orange)',sinal:'-'},
   };
-  return txns.map(t => {
+  return txns.map((t, idx) => {
     const info = tipoInfo[t.tipo]||{bg:'rgba(0,0,0,.06)',icon:'💰',cor:'var(--text)',sinal:''};
     const cx = t.caixinha_id ? empresaCaixinhas.find(c=>c.id===t.caixinha_id) : null;
-    return `<div class="txn-row">
+    const temPag = t.data_pagamento;
+    const isPrimeiroDoDia = idx===0 || txns[idx-1].data !== t.data;
+    const isUltimoDoDia = idx===txns.length-1 || txns[idx+1].data !== t.data;
+    return `
+    ${isPrimeiroDoDia&&comControles?`<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text-3);padding:10px 0 4px">${new Date(t.data+'T12:00:00').toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'long'})}</div>`:''}
+    <div class="txn-row">
       <div class="txn-icon" style="background:${info.bg}">${info.icon}</div>
       <div class="txn-desc">
         <div class="txn-nome">${esc(t.descricao)}</div>
-        <div class="txn-cat">${t.data?new Date(t.data+'T12:00:00').toLocaleDateString('pt-BR'):''}${t.categoria?' · '+esc(t.categoria):''}${cx?' · '+esc(cx.nome):''}</div>
+        <div class="txn-cat">${!comControles&&t.data?new Date(t.data+'T12:00:00').toLocaleDateString('pt-BR'):''}${t.categoria?' · '+esc(t.categoria):''}${cx?' · '+esc(cx.nome):''}${temPag?` · pago ${new Date(temPag+'T12:00:00').toLocaleDateString('pt-BR')}`:''}</div>
       </div>
-      <div>
+      <div style="text-align:right">
         <div class="txn-val" style="color:${info.cor}">${info.sinal}${fmtMoeda(t.valor)}</div>
-        ${t.referencia_tipo?`<div style="font-size:10px;color:var(--text-3);text-align:right">${t.referencia_tipo}</div>`:''}
+        ${t.referencia_tipo?`<div style="font-size:10px;color:var(--text-3)">${t.referencia_tipo}</div>`:''}
       </div>
-      <button onclick="deleteTxn('${t.id}')" style="background:none;border:none;cursor:pointer;color:var(--text-3);font-size:14px;padding:4px;opacity:.5">✕</button>
+      ${comControles?`
+      <div style="display:flex;flex-direction:column;gap:2px">
+        ${!isPrimeiroDoDia?`<button onclick="moverTxn('${t.id}','up')" style="background:none;border:none;cursor:pointer;color:var(--text-3);font-size:11px;line-height:1;padding:2px 4px">▲</button>`:'<div style="height:18px"></div>'}
+        ${!isUltimoDoDia?`<button onclick="moverTxn('${t.id}','down')" style="background:none;border:none;cursor:pointer;color:var(--text-3);font-size:11px;line-height:1;padding:2px 4px">▼</button>`:'<div style="height:18px"></div>'}
+      </div>
+      ${(t.tipo==='entrada'||t.tipo==='saida')&&t.referencia_tipo==='manual'?`<button onclick="registrarDataPagTxn('${t.id}')" style="background:none;border:none;cursor:pointer;color:var(--accent);font-size:11px;white-space:nowrap">💰 Pagar</button>`:''}
+      <button onclick="deleteTxn('${t.id}')" style="background:none;border:none;cursor:pointer;color:var(--text-3);font-size:14px;padding:4px;opacity:.5">✕</button>`
+      :`<button onclick="deleteTxn('${t.id}')" style="background:none;border:none;cursor:pointer;color:var(--text-3);font-size:14px;padding:4px;opacity:.5">✕</button>`}
     </div>`;
   }).join('');
+}
+
+async function moverTxn(id, dir) {
+  const txnsMes = empresaTransacoes.filter(t=>t.data&&t.data.startsWith(mesVizualizado));
+  const idx = txnsMes.findIndex(t=>t.id===id);
+  if (idx<0) return;
+  const outro = dir==='up' ? txnsMes[idx-1] : txnsMes[idx+1];
+  if (!outro || outro.data !== txnsMes[idx].data) return;
+  const ordemA = txnsMes[idx].ordem||0;
+  const ordemB = outro.ordem||0;
+  await Promise.all([
+    sb.from('empresa_transacoes').update({ordem: ordemB}).eq('id', txnsMes[idx].id),
+    sb.from('empresa_transacoes').update({ordem: ordemA}).eq('id', outro.id)
+  ]);
+  empresaTransacoes = empresaTransacoes.map(t => {
+    if (t.id===txnsMes[idx].id) return {...t, ordem: ordemB};
+    if (t.id===outro.id) return {...t, ordem: ordemA};
+    return t;
+  });
+  // Reordenar array local
+  empresaTransacoes.sort((a,b) => {
+    if (b.data > a.data) return 1;
+    if (b.data < a.data) return -1;
+    return (b.ordem||0) - (a.ordem||0);
+  });
+  finTabAtiva = 'extrato';
+  renderFinanceiro();
+}
+
+async function registrarDataPagTxn(id) {
+  showMiniModal('💰 Registrar data de pagamento', '', []);
+  document.getElementById('fuMiniSub').innerHTML = `
+    <div style="margin-top:8px">
+      <label style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--text-3);display:block;margin-bottom:4px">Data do pagamento</label>
+      <input type="date" id="txnPagData" value="${new Date().toISOString().split('T')[0]}"
+        style="width:100%;background:rgba(0,0,0,.04);border:1.5px solid var(--border-s);border-radius:8px;padding:9px 12px;font-family:inherit;font-size:13px;outline:none">
+    </div>`;
+  document.getElementById('fuMiniBtns').innerHTML = '';
+  [
+    { label: '✓ Confirmar', cls: 'btn-p', fn: async () => {
+      const data = document.getElementById('txnPagData')?.value||new Date().toISOString().split('T')[0];
+      await sb.from('empresa_transacoes').update({data_pagamento: data, data: data}).eq('id', id);
+      empresaTransacoes = empresaTransacoes.map(t=>t.id===id?{...t, data_pagamento:data, data}:t);
+      closeMiniModal();
+      finTabAtiva = 'extrato';
+      renderFinanceiro();
+      toast('✓ Data de pagamento registrada');
+    }},
+    { label: 'Cancelar', cls: 'btn-g', fn: closeMiniModal }
+  ].forEach(b => {
+    const el = document.createElement('button');
+    el.className = 'btn '+b.cls; el.textContent = b.label; el.onclick = b.fn;
+    document.getElementById('fuMiniBtns').appendChild(el);
+  });
 }
 
 function renderFinCaixinhas() {
@@ -3821,38 +3971,37 @@ function renderFinNavMeses() {
 
 
 async function editarCaixa() {
-  const mesData = finMeses.find(m=>m.mes===mesVizualizado);
-  showMiniModal('💰 Editar Caixa', '', []);
+  showMiniModal('💰 Registrar Saldo Atual', 'Informe o saldo exato da conta agora. Esta âncora vale para todos os meses.', []);
   document.getElementById('fuMiniSub').innerHTML = `
     <div style="display:flex;flex-direction:column;gap:10px;margin-top:4px">
       <div>
-        <label style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--text-3);display:block;margin-bottom:4px">Saldo atual da conta (R$)</label>
-        <input type="number" id="caixaValInput" value="${mesData?.caixa_inicial||''}" placeholder="0,00"
+        <label style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--text-3);display:block;margin-bottom:4px">Saldo atual na conta (R$)</label>
+        <input type="number" id="caixaValInput" value="${empresaConfig?.caixa_ancora_valor||''}" placeholder="0,00"
           style="width:100%;background:rgba(0,0,0,.04);border:1.5px solid var(--border-s);border-radius:8px;padding:9px 12px;font-family:inherit;font-size:14px;font-weight:600;outline:none">
       </div>
       <div>
-        <label style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--text-3);display:block;margin-bottom:4px">Data de referência</label>
-        <input type="date" id="caixaDataInput" value="${mesData?.caixa_data||new Date().toISOString().split('T')[0]}"
+        <label style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--text-3);display:block;margin-bottom:4px">Data desta contagem</label>
+        <input type="date" id="caixaDataInput" value="${empresaConfig?.caixa_ancora_data||new Date().toISOString().split('T')[0]}"
           style="width:100%;background:rgba(0,0,0,.04);border:1.5px solid var(--border-s);border-radius:8px;padding:9px 12px;font-family:inherit;font-size:13px;outline:none">
+      </div>
+      <div style="font-size:11px;color:var(--text-3);padding:8px;background:rgba(0,113,227,.06);border-radius:8px">
+        💡 Registre uma vez só. O sistema calcula o saldo atual e projeta os próximos meses automaticamente.
       </div>
     </div>`;
   document.getElementById('fuMiniBtns').innerHTML = '';
   [
-    { label: '✓ Salvar', cls: 'btn-p', fn: async () => {
+    { label: '✓ Salvar âncora', cls: 'btn-p', fn: async () => {
       const val = parseFloat(document.getElementById('caixaValInput')?.value)||0;
-      const data = document.getElementById('caixaDataInput')?.value || new Date().toISOString().split('T')[0];
-      await sb.from('financeiro_meses').upsert({
-        mes: mesVizualizado, caixa_inicial: val, caixa_data: data
-      }, {onConflict:'mes'});
-      await loadFinanceiro();
+      const data = document.getElementById('caixaDataInput')?.value||new Date().toISOString().split('T')[0];
+      await salvarAncora(val, data);
       renderFinanceiro();
       closeMiniModal();
-      toast('✓ Caixa atualizado');
+      toast('✓ Âncora salva — saldo calculado automaticamente');
     }},
     { label: 'Cancelar', cls: 'btn-g', fn: closeMiniModal }
   ].forEach(b => {
     const el = document.createElement('button');
-    el.className = 'btn ' + b.cls; el.textContent = b.label; el.onclick = b.fn;
+    el.className = 'btn '+b.cls; el.textContent = b.label; el.onclick = b.fn;
     document.getElementById('fuMiniBtns').appendChild(el);
   });
 }

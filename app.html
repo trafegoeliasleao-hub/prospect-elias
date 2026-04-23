@@ -207,8 +207,10 @@ body::after {
 .kn{font-size:11px;font-weight:600;color:var(--text-3);background:rgba(0,0,0,.05);padding:2px 8px;border-radius:20px}
 .kb{padding:10px;overflow-y:auto;flex:1;scrollbar-width:none}
 .kb::-webkit-scrollbar{display:none}
-.kcard{background:rgba(255,255,255,.55);backdrop-filter:blur(8px);border-radius:var(--r);padding:12px 14px;margin-bottom:7px;cursor:pointer;transition:var(--t);border:1px solid var(--glass-border)}
+.kcard{background:rgba(255,255,255,.55);backdrop-filter:blur(8px);border-radius:var(--r);padding:12px 14px;margin-bottom:7px;cursor:grab;transition:var(--t);border:1px solid var(--glass-border)}
 .kcard:hover{border-color:var(--accent);background:var(--accent-l);transform:translateY(-1px);box-shadow:var(--sh)}
+.kcard-dragging{opacity:.4;transform:scale(.97);cursor:grabbing}
+.kc-drag-over{border-color:var(--accent);background:var(--accent-l);box-shadow:0 0 0 2px var(--accent)}
 .kn2{font-size:13px;font-weight:600;margin-bottom:3px;letter-spacing:-.1px}
 .kni{font-size:11.5px;color:var(--text-2);margin-bottom:8px}
 .kf{display:flex;justify-content:space-between;font-size:11px;color:var(--text-3)}
@@ -1259,21 +1261,73 @@ function renderLeads() {
     : '<div class="empty-li">Nenhum lead aqui.<br>Adicione seu primeiro lead!</div>';
 }
 
+let dragLeadId = null;
+
 function renderKanban() {
   document.getElementById('kanbanBoard').innerHTML = STATUSES.map(s => {
     const col = leads.filter(l => l.status === s);
-    return `<div class="kc">
-      <div class="kh"><div class="kt"><div class="fdot" style="background:${getColor(s)}"></div>${SL[s]}</div><div class="kn">${col.length}</div></div>
+    return `<div class="kc" 
+      ondragover="event.preventDefault();this.classList.add('kc-drag-over')"
+      ondragleave="this.classList.remove('kc-drag-over')"
+      ondrop="onKanbanDrop(event,'${s}');this.classList.remove('kc-drag-over')">
+      <div class="kh">
+        <div class="kt"><div class="fdot" style="background:${getColor(s)}"></div>${SL[s]}</div>
+        <div class="kn">${col.length}</div>
+      </div>
       <div class="kb">${col.length
-        ? col.map(l => `<div class="kcard" onclick="selectLead('${l.id}');switchView('detail',null)">
+        ? col.map(l => `
+          <div class="kcard"
+            draggable="true"
+            ondragstart="onKanbanDragStart(event,'${l.id}')"
+            ondragend="onKanbanDragEnd(event)"
+            onclick="selectLead('${l.id}');switchView('detail',null)">
             <div class="kn2">${esc(l.name)}</div>
             <div class="kni">${esc(l.niche)}</div>
-            <div class="kf"><span>${CI[l.channel]||'📱'} ${l.channel}</span><span>${l.contacts.length} contato${l.contacts.length!==1?'s':''}</span></div>
+            <div class="kf">
+              <span>${CI[l.channel]||'📱'} ${l.channel}</span>
+              <span>${l.contacts.length} contato${l.contacts.length!==1?'s':''}</span>
+            </div>
           </div>`).join('')
-        : '<div class="k-emp">Vazio</div>'}
+        : '<div class="k-emp">Arraste um card aqui</div>'}
       </div>
     </div>`;
   }).join('');
+}
+
+function onKanbanDragStart(event, leadId) {
+  dragLeadId = leadId;
+  event.dataTransfer.effectAllowed = 'move';
+  event.dataTransfer.setData('text/plain', leadId);
+  // Delay para o estilo aparecer após o drag iniciar
+  setTimeout(() => event.target.classList.add('kcard-dragging'), 0);
+}
+
+function onKanbanDragEnd(event) {
+  event.target.classList.remove('kcard-dragging');
+  dragLeadId = null;
+  document.querySelectorAll('.kc-drag-over').forEach(el => el.classList.remove('kc-drag-over'));
+}
+
+async function onKanbanDrop(event, novoStatus) {
+  event.preventDefault();
+  const id = dragLeadId || event.dataTransfer.getData('text/plain');
+  if (!id) return;
+  const l = getLead(id);
+  if (!l || l.status === novoStatus) return;
+  const statusAnterior = l.status;
+  l.status = novoStatus;
+  // Se virar ativo, verificar conversão
+  if (novoStatus === 'ativo') {
+    const clienteVinculado = clientes.find(c=>c.lead_id===id);
+    if (!clienteVinculado) {
+      toast('⚠ Para marcar como Ativo, converta em cliente primeiro');
+      l.status = statusAnterior;
+      return;
+    }
+  }
+  await persistLead(l);
+  renderAll();
+  toast(`✓ ${l.name} → ${SL[novoStatus]}`);
 }
 
 // ── DETAIL ────────────────────────────────
@@ -3253,12 +3307,13 @@ async function deleteCliente(id) {
 // ── FINANCEIRO ────────────────────────────
 let finCustos = [], finMeses = [], finPagamentos = [], finVariaveis = [], finCustosMes = [], finCartao = [];
 let empresaTransacoes = [], empresaCaixinhas = [];
+let pagamentosFinanceiro = []; // pagamentos dos clientes no mês visualizado do financeiro
 let finTabAtiva = 'visao';
 let mesVizualizado = new Date().toISOString().slice(0,7);
 const mesAtualFin = new Date().toISOString().slice(0,7);
 
 async function loadFinanceiro() {
-  const [rc, rm, rp, rv, rcm, rct, rt, rcx] = await Promise.all([
+  const [rc, rm, rp, rv, rcm, rct, rt, rcx, rpf] = await Promise.all([
     sb.from('financeiro_custos').select('*').order('categoria'),
     sb.from('financeiro_meses').select('*').order('mes', {ascending:false}).limit(24),
     sb.from('financeiro_pagamentos_custos').select('*').eq('mes', mesVizualizado),
@@ -3266,7 +3321,8 @@ async function loadFinanceiro() {
     sb.from('financeiro_custos_mes').select('*').eq('mes', mesVizualizado),
     sb.from('cartao_compras').select('*').order('data_compra', {ascending:false}),
     sb.from('empresa_transacoes').select('*').order('data', {ascending:false}).order('ordem', {ascending:false}).limit(500),
-    sb.from('empresa_caixinhas').select('*').order('created_at')
+    sb.from('empresa_caixinhas').select('*').order('created_at'),
+    sb.from('pagamentos_clientes').select('*').eq('mes', mesVizualizado)
   ]);
   finCustos = rc.data || [];
   finMeses = rm.data || [];
@@ -3276,6 +3332,7 @@ async function loadFinanceiro() {
   finCartao = rct.data || [];
   empresaTransacoes = rt.data || [];
   empresaCaixinhas = rcx.data || [];
+  pagamentosFinanceiro = rpf.data || [];
   await loadEmpresaConfig();
 }
 
@@ -3470,15 +3527,17 @@ async function navegarMes(dir) {
   const d = new Date(ano, mes - 1 + dir, 1);
   mesVizualizado = d.toISOString().slice(0,7);
 
-  const [rp, rv, rm2, rcm] = await Promise.all([
+  const [rp, rv, rm2, rcm, rpf] = await Promise.all([
     sb.from('financeiro_pagamentos_custos').select('*').eq('mes', mesVizualizado),
     sb.from('financeiro_variaveis').select('*').eq('mes', mesVizualizado).order('created_at'),
     sb.from('financeiro_meses').select('*').eq('mes', mesVizualizado).maybeSingle(),
-    sb.from('financeiro_custos_mes').select('*').eq('mes', mesVizualizado)
+    sb.from('financeiro_custos_mes').select('*').eq('mes', mesVizualizado),
+    sb.from('pagamentos_clientes').select('*').eq('mes', mesVizualizado)
   ]);
   finPagamentos = rp.data || [];
   finVariaveis = rv.data || [];
   finCustosMes = rcm.data || [];
+  pagamentosFinanceiro = rpf.data || [];
 
   if (rm2.data) {
     const idx = finMeses.findIndex(m=>m.mes===mesVizualizado);
@@ -3562,19 +3621,18 @@ function renderFinVisaoGeral() {
   const totalCustos = custosDoMes.reduce((s,c)=>s+Number(c.valor),0);
   const totalVariaveis = finVariaveis.reduce((s,v)=>s+Number(v.valor),0);
   const totalCartao = parcelasDoMes.reduce((s,p)=>s+Number(p.valor_parcela||0),0);
-  const ativosContrato = clientes.filter(c=>c.status_contrato==='ativo');
+  const ativosContrato = clientes.filter(c=>c.status_contrato==='ativo'&&clienteAtivoNoMes(c));
   let receitaRecebida=0, receitaPrevista=0, receitaAtrasada=0;
   const hoje = new Date(); hoje.setHours(0,0,0,0);
   ativosContrato.forEach(c => {
     const val = Number(c.valor_contrato||0);
     const [ano, mes] = mesVizualizado.split('-').map(Number);
     const dataVenc = c.dia_vencimento ? new Date(ano, mes-1, c.dia_vencimento) : null;
-    if (mesVizualizado === mesClientes) {
-      const pag = pagamentosClientes.find(p=>p.cliente_id===c.id);
-      if (pag?.status==='pago') receitaRecebida += Number(pag.valor_recebido||val);
-      else if (dataVenc && hoje > dataVenc) receitaAtrasada += val;
-      else receitaPrevista += val;
-    } else receitaPrevista += val;
+    // Sempre usar pagamentosFinanceiro (mês do financeiro), não pagamentosClientes
+    const pag = pagamentosFinanceiro.find(p=>p.cliente_id===c.id);
+    if (pag?.status==='pago') receitaRecebida += Number(pag.valor_recebido||val);
+    else if (dataVenc && hoje > dataVenc) receitaAtrasada += val;
+    else receitaPrevista += val;
   });
   const custosPagos = finPagamentos.filter(p=>!p.ignorado).reduce((s,p)=>s+Number(p.valor_pago||0),0);
   const variaveisPagas = finVariaveis.filter(v=>v.pago).reduce((s,v)=>s+Number(v.valor),0);
@@ -3722,28 +3780,62 @@ function renderTxnLista(txns, comControles = false) {
 }
 
 async function moverTxn(id, dir) {
-  const txnsMes = empresaTransacoes.filter(t=>t.data&&t.data.startsWith(mesVizualizado));
-  const idx = txnsMes.findIndex(t=>t.id===id);
+  const tAtualGlobal = empresaTransacoes.find(t=>t.id===id);
+  if (!tAtualGlobal) return;
+
+  const dataAtual = tAtualGlobal.data;
+  // Pegar só as transações DO MESMO DIA, ordenadas como aparecem na tela
+  const mesmoDia = empresaTransacoes
+    .filter(t=>t.data===dataAtual)
+    .sort((a,b)=>(b.ordem||0)-(a.ordem||0));
+
+  const idx = mesmoDia.findIndex(t=>t.id===id);
   if (idx<0) return;
-  const outro = dir==='up' ? txnsMes[idx-1] : txnsMes[idx+1];
-  if (!outro || outro.data !== txnsMes[idx].data) return;
-  const ordemA = txnsMes[idx].ordem||0;
-  const ordemB = outro.ordem||0;
+
+  const idxAlvo = dir==='up' ? idx-1 : idx+1;
+  if (idxAlvo<0 || idxAlvo>=mesmoDia.length) return;
+
+  const tOutro = mesmoDia[idxAlvo];
+
+  // Garantir que todos do dia têm ordens únicas e sequenciais
+  const jaTemOrdem = mesmoDia.every(t=>t.ordem!=null && t.ordem!==0);
+  if (!jaTemOrdem) {
+    // Inicializar ordens: maior ordem = aparece primeiro (topo da lista)
+    const updates = mesmoDia.map((t,i) => ({id: t.id, ordem: mesmoDia.length - i}));
+    await Promise.all(updates.map(u=>sb.from('empresa_transacoes').update({ordem:u.ordem}).eq('id',u.id)));
+    empresaTransacoes = empresaTransacoes.map(t=>{
+      const u = updates.find(x=>x.id===t.id);
+      return u ? {...t, ordem:u.ordem} : t;
+    });
+  }
+
+  // Reler ordens atuais após possível inicialização
+  const tA = empresaTransacoes.find(t=>t.id===id);
+  const tB = empresaTransacoes.find(t=>t.id===tOutro.id);
+  if (!tA||!tB) return;
+
+  const ordemA = tA.ordem ?? 0;
+  const ordemB = tB.ordem ?? 0;
+
+  // Trocar ordens
   await Promise.all([
-    sb.from('empresa_transacoes').update({ordem: ordemB}).eq('id', txnsMes[idx].id),
-    sb.from('empresa_transacoes').update({ordem: ordemA}).eq('id', outro.id)
+    sb.from('empresa_transacoes').update({ordem:ordemB}).eq('id', tA.id),
+    sb.from('empresa_transacoes').update({ordem:ordemA}).eq('id', tB.id)
   ]);
-  empresaTransacoes = empresaTransacoes.map(t => {
-    if (t.id===txnsMes[idx].id) return {...t, ordem: ordemB};
-    if (t.id===outro.id) return {...t, ordem: ordemA};
+
+  empresaTransacoes = empresaTransacoes.map(t=>{
+    if (t.id===tA.id) return {...t, ordem:ordemB};
+    if (t.id===tB.id) return {...t, ordem:ordemA};
     return t;
   });
-  // Reordenar array local
-  empresaTransacoes.sort((a,b) => {
+
+  // Reordenar array local por data desc + ordem desc
+  empresaTransacoes.sort((a,b)=>{
     if (b.data > a.data) return 1;
     if (b.data < a.data) return -1;
-    return (b.ordem||0) - (a.ordem||0);
+    return (b.ordem??0) - (a.ordem??0);
   });
+
   finTabAtiva = 'extrato';
   renderFinanceiro();
 }

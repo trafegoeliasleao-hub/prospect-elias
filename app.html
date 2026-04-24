@@ -2588,13 +2588,11 @@ function getMesClientesNav() {
   };
 }
 
-function clienteAtivoNoMes(c) {
-  // Cliente só aparece em meses >= data_inicio
-  if (!c.data_inicio) return true; // sem data, sempre aparece
-  const [anoMes, mesMes] = mesClientes.split('-').map(Number);
-  const inicioMes = mesClientes + '-01';
-  const fimMes = new Date(anoMes, mesMes, 0).toISOString().split('T')[0]; // último dia do mês
-  // Aparece se data_inicio <= último dia do mês visualizado
+function clienteAtivoNoMes(c, mesStr) {
+  mesStr = mesStr || mesClientes;
+  if (!c.data_inicio) return true;
+  const [ano, mes] = mesStr.split('-').map(Number);
+  const fimMes = new Date(ano, mes, 0).toISOString().split('T')[0];
   return c.data_inicio <= fimMes;
 }
 
@@ -2921,6 +2919,11 @@ async function registrarPagamentoCliente(clienteId, valorContrato, nome) {
       await registrarTransacao('entrada', `Recebimento — ${nome}`, val, data, 'cliente', clienteId, 'cliente', null);
       closeMiniModal();
       await loadPagamentosClientes();
+      // Atualizar pagamentosFinanceiro se for o mesmo mês
+      if (mesClientes === mesVizualizado) {
+        const { data: rpf } = await sb.from('pagamentos_clientes').select('*').eq('mes', mesVizualizado);
+        pagamentosFinanceiro = rpf || [];
+      }
       renderClientes();
       toast('✓ Recebimento registrado!');
     }},
@@ -3772,8 +3775,8 @@ function renderTxnLista(txns, comControles = false) {
         ${!isPrimeiroDoDia?`<button onclick="moverTxn('${t.id}','up')" style="background:none;border:none;cursor:pointer;color:var(--text-3);font-size:11px;line-height:1;padding:2px 4px">▲</button>`:'<div style="height:18px"></div>'}
         ${!isUltimoDoDia?`<button onclick="moverTxn('${t.id}','down')" style="background:none;border:none;cursor:pointer;color:var(--text-3);font-size:11px;line-height:1;padding:2px 4px">▼</button>`:'<div style="height:18px"></div>'}
       </div>
-      ${(t.tipo==='entrada'||t.tipo==='saida')&&t.referencia_tipo==='manual'?`<button onclick="registrarDataPagTxn('${t.id}')" style="background:none;border:none;cursor:pointer;color:var(--accent);font-size:11px;white-space:nowrap">💰 Pagar</button>`:''}
-      <button onclick="deleteTxn('${t.id}')" style="background:none;border:none;cursor:pointer;color:var(--text-3);font-size:14px;padding:4px;opacity:.5">✕</button>`
+      <button onclick="editarTxn('${t.id}')" style="background:none;border:none;cursor:pointer;color:var(--text-3);font-size:14px;padding:4px" title="Editar">✏️</button>
+      <button onclick="deleteTxn('${t.id}')" style="background:none;border:none;cursor:pointer;color:var(--text-3);font-size:14px;padding:4px;opacity:.5" title="Remover">✕</button>`
       :`<button onclick="deleteTxn('${t.id}')" style="background:none;border:none;cursor:pointer;color:var(--text-3);font-size:14px;padding:4px;opacity:.5">✕</button>`}
     </div>`;
   }).join('');
@@ -4014,6 +4017,10 @@ function renderFinCartao() {
 
 function renderFinanceiro() {
   const wrap = document.getElementById('finWrap');
+  // Preservar posição de scroll
+  const scrollEl = wrap.querySelector('[data-fin-scroll]') || wrap.firstElementChild;
+  const prevScroll = scrollEl ? scrollEl.scrollTop : 0;
+
   // Abas do financeiro
   const tabs = [
     {id:'visao', label:'📊 Visão Geral'},
@@ -4024,7 +4031,7 @@ function renderFinanceiro() {
   ];
 
   wrap.innerHTML = `
-    <div style="height:100%;overflow-y:auto">
+    <div style="height:100%;overflow-y:auto" data-fin-scroll>
       <!-- ABAS -->
       <div class="fin-tabs">
         ${tabs.map(t=>`<button class="fin-tab ${finTabAtiva===t.id?'active':''}" onclick="finTabAtiva='${t.id}';renderFinanceiro()">${t.label}</button>`).join('')}
@@ -4040,6 +4047,12 @@ function renderFinanceiro() {
         ${finTabAtiva==='cartao' ? renderFinCartao() : ''}
       </div>
     </div>`;
+
+  // Restaurar posição do scroll
+  const newScrollEl = wrap.querySelector('[data-fin-scroll]');
+  if (newScrollEl && prevScroll > 0) {
+    requestAnimationFrame(() => { newScrollEl.scrollTop = prevScroll; });
+  }
 }
 
 function renderFinNavMeses() {
@@ -4302,6 +4315,64 @@ async function saveTxnManual() {
   document.getElementById('txnOverlay')?.remove();
   renderFinanceiro();
   toast('✓ Lançamento registrado');
+}
+
+function editarTxn(id) {
+  const t = empresaTransacoes.find(x=>x.id===id);
+  if (!t) return;
+  const overlay = document.createElement('div');
+  overlay.className = 'overlay open';
+  overlay.id = 'editTxnOverlay';
+  overlay.onclick = e => { if(e.target===overlay) overlay.remove(); };
+  overlay.innerHTML = `
+    <div class="modal">
+      <div class="m-drag"></div>
+      <div class="mt">✏️ Editar Lançamento</div>
+      ${t.referencia_tipo&&t.referencia_tipo!=='manual'?`<div style="font-size:11px;color:var(--orange);padding:8px 12px;background:rgba(255,149,0,.08);border-radius:8px;margin-bottom:12px">⚠ Este registro veio de "${t.referencia_tipo}". Editar aqui não altera o original.</div>`:''}
+      <div class="fg"><label class="fl">Tipo</label>
+        <select class="fc2" id="edt-tipo">
+          <option value="entrada" ${t.tipo==='entrada'?'selected':''}>⬇️ Entrada</option>
+          <option value="saida" ${t.tipo==='saida'?'selected':''}>⬆️ Saída</option>
+          <option value="caixinha_deposito" ${t.tipo==='caixinha_deposito'?'selected':''}>🐷 Depósito caixinha</option>
+          <option value="caixinha_resgate" ${t.tipo==='caixinha_resgate'?'selected':''}>🐷 Resgate caixinha</option>
+          <option value="cartao_pagamento" ${t.tipo==='cartao_pagamento'?'selected':''}>💳 Cartão</option>
+        </select>
+      </div>
+      <div class="fg"><label class="fl">Descrição</label><input class="fc2" id="edt-desc" value="${esc(t.descricao||'')}"></div>
+      <div class="fr">
+        <div class="fg"><label class="fl">Valor (R$)</label><input class="fc2" id="edt-val" type="number" value="${t.valor}"></div>
+        <div class="fg"><label class="fl">Data</label><input class="fc2" id="edt-data" type="date" value="${t.data||''}"></div>
+      </div>
+      <div class="fg"><label class="fl">Categoria</label><input class="fc2" id="edt-cat" value="${esc(t.categoria||'')}"></div>
+      <div class="mf">
+        <button class="btn btn-g" onclick="document.getElementById('editTxnOverlay').remove()">Cancelar</button>
+        <button class="btn btn-red" onclick="deleteTxn('${t.id}');document.getElementById('editTxnOverlay').remove()">Excluir</button>
+        <button class="btn btn-p" onclick="saveEditTxn('${t.id}')">Salvar</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+}
+
+async function saveEditTxn(id) {
+  const payload = {
+    tipo: document.getElementById('edt-tipo').value,
+    descricao: document.getElementById('edt-desc').value.trim(),
+    valor: parseFloat(document.getElementById('edt-val').value)||0,
+    data: document.getElementById('edt-data').value||null,
+    categoria: document.getElementById('edt-cat').value.trim()||null,
+  };
+  if (!payload.descricao) { toast('Descrição é obrigatória'); return; }
+  await sb.from('empresa_transacoes').update(payload).eq('id', id);
+  empresaTransacoes = empresaTransacoes.map(t => t.id===id ? {...t, ...payload} : t);
+  // Reordenar por data
+  empresaTransacoes.sort((a,b)=>{
+    if (b.data > a.data) return 1;
+    if (b.data < a.data) return -1;
+    return (b.ordem??0) - (a.ordem??0);
+  });
+  document.getElementById('editTxnOverlay')?.remove();
+  renderFinanceiro();
+  toast('✓ Lançamento atualizado');
 }
 
 async function deleteTxn(id) {
